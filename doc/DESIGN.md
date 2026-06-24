@@ -21,8 +21,9 @@ neither display server provides natively.
 
 - **Primary selection** (middle-click / highlight). Dropped for leanness.
 - **Secondary selection.** Does not exist on Wayland; never exposed.
-- **Clipboard history / watch mode.** Would require the data-control protocol
-  family; out of scope. Left as a future note only.
+- **Clipboard history / watch mode.** The *monitoring* side of the data-control
+  family; out of scope. (We do use `ext-data-control` for plain copy/paste — see
+  §7 — but not its watch/history capabilities.) Left as a future note only.
 - macOS / Windows backends.
 
 ## 3. The Ownership Model (root concept)
@@ -129,6 +130,12 @@ typedef struct {
 
 All data is `(void *, size_t)` — never C strings — for binary safety.
 
+`get` returns a small status — `OK` / `ERROR` / `NO_TEXT` — not just a bool. The
+distinct `NO_TEXT` lets `add` tell an *empty* clipboard (proceed as copy) from a
+*non-text* selection (refuse rather than clobber — see §6), and lets `paste`
+report "no text content" cleanly. Backend error messages are verb-neutral
+(`x11:`, `wayland:`, `null:`) since `get` is shared by `paste` and `add`.
+
 ### 5.2 Backend detection
 
 `$WAYLAND_DISPLAY` set → Wayland; else `$DISPLAY` set → X11; else error
@@ -206,15 +213,30 @@ int clip_add(clipboard_backend *b, const char *mime,
   `SelectionClear` (someone else took it).
 
 ### Wayland (libwayland-client)
-- Regular clipboard only: `wl_data_device_manager` / `wl_data_device`.
-- **`set` needs an input-event serial + a hidden `wl_surface`/seat** — the
-  compositor validates ownership against recent input focus. This complexity
-  lives entirely in the backend; the CLI is unaffected.
+- **Protocol: `ext_data_control_manager_v1`** (the freedesktop-standardized
+  data-control), *not* core `wl_data_device`. The core protocol's
+  `set_selection` requires an input-event serial, obtainable only by briefly
+  mapping a *focusable* surface — a window flash plus a pile of `wl_shm` /
+  `xdg-shell` code for a headless CLI. ext-data-control is built for exactly this
+  case (clipboard managers and CLI tools that own/read the selection without
+  being a focused app): no serial, no surface, no flash. It is what
+  `wl-copy`/`wl-paste` actually use. *(Chosen over the original "regular
+  clipboard only" plan after confirming KWin advertises
+  `ext_data_control_manager_v1`. The serial/surface complexity the plan
+  anticipated is thereby avoided entirely.)*
 - **The backgrounded owner must run a dispatch loop** (`wl_display_dispatch`)
-  to answer send requests. Fork without the loop ⇒ copy "succeeds" but every
-  paste returns empty. *The* Wayland gotcha.
-- Klipper integration is automatic: implement `wl_data_source` correctly and
-  Klipper records the entry and provides post-exit persistence on its own.
+  to answer `ext_data_control_source.send`. Fork without the loop ⇒ copy
+  "succeeds" but every paste returns empty. *The* Wayland gotcha — unchanged by
+  the protocol choice.
+- Clipboard-manager integration is automatic: implement
+  `ext_data_control_source` correctly and Plasma's manager records the entry and
+  provides post-exit persistence on its own (it takes ownership, which
+  `cancel`s our source ⇒ our owner exits cleanly — so on KDE a copy *feels*
+  fire-and-forget and our owner does not linger).
+- Caveat: with a running manager, `clear` relinquishes our ownership but the
+  manager may immediately restore the previous entry from history (observed on
+  Plasma). This is correct and expected — we add no manager-specific code (a
+  non-goal), and `set_selection(NULL)` is the honest relinquish.
 
 ## 8. Environment Matrix
 

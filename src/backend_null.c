@@ -62,7 +62,7 @@ static int null_set(const char *mime, const void *data, size_t len)
 
     int fd = open(null_store_path(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
     if (fd < 0) {
-        perror("cpclip(null): open for write");
+        perror("null: open for write");
         return -1;
     }
 
@@ -73,7 +73,7 @@ static int null_set(const char *mime, const void *data, size_t len)
     if (write_all(fd, hdr, sizeof hdr) != 0 ||
         write_all(fd, mime, mlen) != 0 ||
         (len && write_all(fd, data, len) != 0)) {
-        perror("cpclip(null): write");
+        perror("null: write");
         rc = -1;
     }
 
@@ -81,18 +81,29 @@ static int null_set(const char *mime, const void *data, size_t len)
     return rc;
 }
 
+/* A mime is "text" if it's a "text/..." type or an X11 text atom name. */
+static int is_text_mime(const char *m)
+{
+    if (!m)
+        return 0;
+    if (strncmp(m, "text/", 5) == 0)
+        return 1;
+    return strcmp(m, "UTF8_STRING") == 0 ||
+           strcmp(m, "STRING") == 0 ||
+           strcmp(m, "TEXT") == 0;
+}
+
 static int null_get(const char *mime, void **out, size_t *out_len)
 {
-    (void)mime;             /* single-slot store; the type is informational */
     *out = NULL;
     *out_len = 0;
 
     int fd = open(null_store_path(), O_RDONLY);
     if (fd < 0) {
         if (errno == ENOENT)
-            return 0;       /* empty clipboard */
-        perror("cpclip(null): open for read");
-        return -1;
+            return CLIP_GET_OK;         /* empty clipboard */
+        perror("null: open for read");
+        return CLIP_GET_ERROR;
     }
 
     void *all = NULL;
@@ -100,25 +111,39 @@ static int null_get(const char *mime, void **out, size_t *out_len)
     int rc = read_all_fd(fd, &all, &all_len, -1);
     close(fd);
     if (rc != 0)
-        return -1;
+        return CLIP_GET_ERROR;
 
     if (all_len < MIME_LEN_BYTES) {     /* empty or truncated => treat as empty */
         free(all);
-        return 0;
+        return CLIP_GET_OK;
     }
 
     const unsigned char *p = (const unsigned char *)all;
     size_t mlen = get_u32_le(p);
     if (MIME_LEN_BYTES + mlen > all_len) {
         free(all);
-        return 0;
+        return CLIP_GET_OK;
+    }
+
+    /* Recover the stored type so the fake models real type negotiation: a
+     * non-text store cannot satisfy a text (or default) request unless the
+     * caller asks for that exact type. */
+    char stored[256];
+    size_t n = mlen < sizeof stored - 1 ? mlen : sizeof stored - 1;
+    memcpy(stored, p + MIME_LEN_BYTES, n);
+    stored[n] = '\0';
+
+    int exact_match = mime && *mime && strcmp(mime, stored) == 0;
+    if (!is_text_mime(stored) && !exact_match) {
+        free(all);
+        return CLIP_GET_NO_TEXT;
     }
 
     size_t dlen = all_len - MIME_LEN_BYTES - mlen;
     void *data = malloc(dlen ? dlen : 1);
     if (!data) {
         free(all);
-        return -1;
+        return CLIP_GET_ERROR;
     }
     if (dlen)
         memcpy(data, p + MIME_LEN_BYTES + mlen, dlen);
@@ -126,13 +151,13 @@ static int null_get(const char *mime, void **out, size_t *out_len)
 
     *out = data;
     *out_len = dlen;
-    return 0;
+    return CLIP_GET_OK;
 }
 
 static int null_clear(void)
 {
     if (unlink(null_store_path()) != 0 && errno != ENOENT) {
-        perror("cpclip(null): unlink");
+        perror("null: unlink");
         return -1;
     }
     return 0;

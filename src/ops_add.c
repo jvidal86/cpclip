@@ -1,22 +1,28 @@
-/* ops_add.c — see ops_add.h and DESIGN.md §5.3.
- *
- * Phase 0 ships the core composition. Phase 3 adds the refinements: a hard
- * ordering guarantee (fully complete the read before the write acquires
- * ownership) and type coherence (reject a text add onto a non-text selection).
- */
+/* ops_add.c — see ops_add.h and DESIGN.md §5.3. */
 #include "ops_add.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 int clip_add(const clipboard_backend *b, const char *mime,
              const void *new_data, size_t new_len, const char *sep)
 {
-    /* Must FULLY read the old owner before becoming the new owner. */
+    /* Ordering guarantee: the read below runs to completion (the backend opens
+     * its own connection, reads, and closes) BEFORE set() forks the new owner.
+     * So we never read our own freshly-emptied self. */
     void *cur = NULL;
     size_t cur_len = 0;
-    if (b->get(mime, &cur, &cur_len) != 0)
+    int status = b->get(mime, &cur, &cur_len);
+
+    /* Type coherence: a non-text selection must not be silently clobbered. An
+     * empty clipboard, by contrast, is fine — the first add is just a copy. */
+    if (status == CLIP_GET_NO_TEXT) {
+        fprintf(stderr, "cpadd: current selection is not text; refusing to overwrite it\n");
         return -1;
+    }
+    if (status != CLIP_GET_OK)
+        return -1;                          /* infrastructure error, reported */
 
     size_t sep_len = (cur_len && sep) ? strlen(sep) : 0;  /* no leading sep */
     size_t total = cur_len + sep_len + new_len;

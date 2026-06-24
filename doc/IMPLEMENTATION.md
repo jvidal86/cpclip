@@ -76,24 +76,38 @@ here.
 
 Libraries: `libwayland-dev`, `wayland-protocols`.
 
+**Protocol decision (deviates from the original plan):** use
+`ext_data_control_manager_v1` (freedesktop-standardized data-control), not core
+`wl_data_device`. The core protocol needs an input-event serial → a briefly
+mapped focusable surface (window flash + `wl_shm`/`xdg-shell` code);
+ext-data-control needs neither and is what `wl-copy` uses. See DESIGN.md §7.
+
 Tasks:
-- `Makefile`: `wayland-scanner` generates client glue from the protocol XML.
+- `Makefile`: `wayland-scanner` generates client glue from
+  `wayland-protocols`' `staging/ext-data-control/ext-data-control-v1.xml`.
 - `backend_wayland.c`: connect (`wl_display_connect`), bind globals
-  (`wl_seat`, `wl_data_device_manager`), get the `wl_data_device`.
-- `set`: create a `wl_data_source`, advertise the MIME set, **acquire an input
-  serial via a hidden surface/seat**, call `set_selection`, then serve
-  `wl_data_source.send` events by writing bytes to the supplied fd.
+  (`wl_seat`, `ext_data_control_manager_v1`), get the
+  `ext_data_control_device_v1`.
+- `set`: `create_data_source`, `offer` the MIME set, `set_selection(source)`
+  (**no serial, no surface**), then serve `ext_data_control_source.send` events
+  by writing bytes to the supplied fd; exit on `cancelled`.
 - **Run the dispatch loop** (`wl_display_dispatch`) in the backgrounded owner —
   without it copy "succeeds" but paste returns empty. Loud comment in code.
-- `get`: handle `wl_data_device.data_offer` / `selection`, enumerate offered
-  MIME types, pick best text type, `receive` into a pipe, read to EOF.
+- `get`: handle `ext_data_control_device_v1.data_offer` / `selection`, enumerate
+  the offer's MIME types, pick best text type, `receive` into a pipe, read to EOF.
 - `clear`: `set_selection(NULL)` to relinquish.
-- Reuse the **same** fork/handshake and SIGPIPE handling from Phase 1.
+- Reuse the **same** fork/handshake (now shared in `proc_util.c`) and SIGPIPE
+  handling from Phase 1.
 
-**Exit test (under Wayland / `cage` or `weston --headless`):**
-- Same four assertions as Phase 1.
-- **Persistence handoff under Klipper:** `echo x | cpclip`, kill the owner
-  process, then paste in an app → `x` still present (Klipper held it).
+**Exit test (native KWin/Wayland session):**
+- Same four assertions as Phase 1 — all pass (copy/paste proves the dispatch
+  loop serves data; NUL byte binary-safe; large payload byte-exact; SIGPIPE).
+- **Persistence handoff under Plasma's manager:** `echo x | cpclip`, kill our
+  owner, then paste → `x` still present (the manager held it). On KDE the
+  manager takes ownership promptly, so our owner usually exits on its own.
+- **Known environment caveat:** with Plasma's manager running, `clear` does not
+  leave the clipboard empty (it restores from history). Expected — `add`-on-empty
+  semantics are therefore verified on the null/X11 backends (shared `ops_add.c`).
 
 ---
 
@@ -108,6 +122,10 @@ Tasks:
   ownership (avoid reading your own empty self).
 - Empty clipboard ⇒ behaves like `cpclip` (no leading separator).
 - Type coherence: non-text current selection + text `cpadd` ⇒ clean error.
+  Implemented via the tri-state `get` contract (`CLIP_GET_OK/ERROR/NO_TEXT` in
+  `backend.h`): `NO_TEXT` is what triggers the refusal. Verified on the null
+  backend, which now models type negotiation (store a non-text type via
+  `cpclip -t image/png --backend null`).
 - `cpadd` ends in a `set`, so it forks/persists like `cpclip` (and shares the
   same TTY-mirror gating).
 
@@ -138,14 +156,22 @@ Tasks:
   rejected with a hint; non-text `cpadd`; MIME not serveable; wrong/unknown
   `argv[0]` invocation name.
 - `man` pages for all four commands (one source, four names).
-- Automated test matrix running the *same* CLI assertions under:
-  - Xvfb (X11),
-  - headless Wayland (`cage` / `weston --headless`),
-  - and the Klipper persistence case on the KDE box.
-- Edge cases: empty input, very large input (exercises grow-buffer),
-  `cppaste` with empty clipboard, early-closing reader (SIGPIPE).
+- Automated test matrix running the *same* CLI assertions under every backend
+  available in the session.
+- Edge cases: empty input, very large input, `cppaste` with empty clipboard,
+  early-closing reader (SIGPIPE).
+- **X11 INCR send** for payloads above the server max request size (~16 MB),
+  closing the one remaining silent-truncation path.
 
-**Exit test:** full matrix green; identical CLI behavior across both backends.
+**Status (done):** `tests/run.sh` (`make test`) covers null + X11 + Wayland with
+36 assertions, all green — round-trip, NUL/binary safety, `add` composition,
+type coherence, newline handling, SIGPIPE, empty/large input (incl. 24 MB via
+INCR send), `--foreground`, and the full CLI surface (dispatch, flag rejection,
+exit codes). `--foreground`/`--no-newline` confirmed; man pages installed via the
+`install` target; `.gitignore` covers build/generated artifacts.
+
+The `add`-on-empty assertion is skipped on a backend whose `clear` is undone by a
+clipboard manager (DESIGN.md §7); it is covered deterministically on null/X11.
 
 ---
 

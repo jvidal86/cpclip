@@ -9,11 +9,13 @@
  *   request_targets -> choose_target -> convert_and_read -> read_selection_property
  * and writing splits the parent (handshake) from the child (owner daemon).
  *
- * Scope: INCR *receive* is implemented (so we can paste large data from real
- * apps); INCR *send* (chunking our own huge payloads) is deferred to Phase 4 —
- * a single ChangeProperty serves the typical clipboard sizes Phase 1 targets.
+ * Large payloads use the INCR protocol in BOTH directions: read_property_incr
+ * on get, and begin_incr_send/continue_incr_send on serve, so data larger than
+ * the server's max request size (~16 MB here) round-trips correctly instead of
+ * silently truncating.
  */
 #include "backend.h"
+#include "proc_util.h"
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -342,8 +344,8 @@ static int read_without_targets(Display *d, Window w, const atoms_t *a,
 
     for (int i = 0; i < n; i++)
         if (convert_and_read(d, w, a, candidates[i], prop, out, out_len) == 0)
-            return 0;
-    return fail("cppaste(x11): clipboard owner offered no readable text");
+            return CLIP_GET_OK;
+    return CLIP_GET_NO_TEXT;             /* owner present, but no text we can read */
 }
 
 /* Negotiate and read the current selection (caller already checked an owner
@@ -360,10 +362,10 @@ static int read_clipboard(Display *d, Window w, const atoms_t *a, Atom prop,
     int np = build_get_preferences(d, a, mime, pref, MAX_GET_PREFERENCES);
     Atom chosen = choose_target(pref, np, offered, n);
     if (chosen == None)
-        return fail("cppaste(x11): clipboard owner offers no text target");
+        return CLIP_GET_NO_TEXT;        /* owner offers no text target */
     if (convert_and_read(d, w, a, chosen, prop, out, out_len) != 0)
-        return fail("cppaste(x11): selection conversion failed");
-    return 0;
+        return CLIP_GET_NO_TEXT;        /* advertised text, but couldn't read it */
+    return CLIP_GET_OK;
 }
 
 static int x11_get(const char *mime, void **out, size_t *out_len)
@@ -373,7 +375,7 @@ static int x11_get(const char *mime, void **out, size_t *out_len)
 
     Display *d = XOpenDisplay(NULL);
     if (!d)
-        return fail("cppaste(x11): cannot open display");
+        return fail("x11: cannot open display");
 
     atoms_t a;
     intern_atoms(d, &a);
@@ -391,6 +393,29 @@ static int x11_get(const char *mime, void **out, size_t *out_len)
 
 /* ---- set (owner; forks and persists) ----------------------------------- */
 
+/* INCR send: a payload larger than the server's max request size cannot go in a
+ * single ChangeProperty, so we hand it over in chunks via the INCR protocol
+ * (the send counterpart of read_property_incr). Each in-flight transfer tracks
+ * how far we have delivered to one requestor. */
+#define MAX_INCR_XFERS 8
+
+typedef struct {
+    Window requestor;
+    Atom prop;
+    Atom target;
+    size_t offset;      /* bytes already delivered */
+    int active;
+} incr_xfer;
+
+/* A backgrounded owner must survive a requestor vanishing mid-transfer
+ * (BadWindow etc.), so it swallows X errors rather than letting Xlib abort. */
+static int ignore_x_error(Display *d, XErrorEvent *e)
+{
+    (void)d;
+    (void)e;
+    return 0;
+}
+
 typedef struct {
     Display *d;
     Window win;
@@ -402,6 +427,8 @@ typedef struct {
     Time owner_time;
     int have_xfixes;
     int xfixes_event_base;
+    size_t max_chunk;                   /* largest single-ChangeProperty payload */
+    incr_xfer xfers[MAX_INCR_XFERS];
 } owner_t;
 
 /* The honest text set, plus any custom -t type, all serving the same bytes. */
@@ -437,6 +464,58 @@ static Time capture_timestamp(Display *d, Window w)
     }
 }
 
+static incr_xfer *find_xfer(owner_t *o, Window requestor, Atom prop)
+{
+    for (int i = 0; i < MAX_INCR_XFERS; i++)
+        if (o->xfers[i].active && o->xfers[i].requestor == requestor &&
+            o->xfers[i].prop == prop)
+            return &o->xfers[i];
+    return NULL;
+}
+
+/* Start an INCR transfer: advertise the total size as type INCR and watch the
+ * requestor's property for the deletes that pace the chunks. Returns 1 if
+ * started, 0 if no slot is free (caller falls back to a single-shot attempt). */
+static int begin_incr_send(owner_t *o, Window requestor, Atom prop, Atom target)
+{
+    incr_xfer *x = NULL;
+    for (int i = 0; i < MAX_INCR_XFERS && !x; i++)
+        if (!o->xfers[i].active)
+            x = &o->xfers[i];
+    if (!x)
+        return 0;
+
+    *x = (incr_xfer){ .requestor = requestor, .prop = prop, .target = target,
+                      .offset = 0, .active = 1 };
+
+    XSelectInput(o->d, requestor, PropertyChangeMask);
+    unsigned long total = (unsigned long)o->len;
+    XChangeProperty(o->d, requestor, prop, o->a.incr, 32, PropModeReplace,
+                    (unsigned char *)&total, 1);
+    return 1;
+}
+
+/* Push the next INCR chunk when the requestor deletes the property; a final
+ * zero-length property signals the end of the transfer. */
+static void continue_incr_send(owner_t *o, Window requestor, Atom prop)
+{
+    incr_xfer *x = find_xfer(o, requestor, prop);
+    if (!x)
+        return;
+
+    size_t remaining = o->len - x->offset;
+    size_t chunk = remaining < o->max_chunk ? remaining : o->max_chunk;
+    XChangeProperty(o->d, requestor, prop, x->target, 8, PropModeReplace,
+                    o->data + x->offset, (int)chunk);
+    XFlush(o->d);
+    x->offset += chunk;
+
+    if (chunk == 0) {                   /* terminator sent => transfer complete */
+        XSelectInput(o->d, requestor, NoEventMask);
+        x->active = 0;
+    }
+}
+
 /* Fill the requestor's property and prepare the SelectionNotify reply. */
 static void answer_target(owner_t *o, XSelectionRequestEvent *req, Atom prop)
 {
@@ -452,8 +531,11 @@ static void answer_target(owner_t *o, XSelectionRequestEvent *req, Atom prop)
     } else if (req->target == o->a.timestamp) {
         XChangeProperty(o->d, req->requestor, prop, XA_INTEGER, 32,
                         PropModeReplace, (unsigned char *)&o->owner_time, 1);
+    } else if (o->len > o->max_chunk &&
+               begin_incr_send(o, req->requestor, prop, req->target)) {
+        /* Large payload handed over incrementally (property set to INCR). */
     } else {
-        /* A served text target. INCR send (huge payloads) is a Phase 4 item. */
+        /* A served text target that fits in a single request. */
         XChangeProperty(o->d, req->requestor, prop, req->target, 8,
                         PropModeReplace, o->data, (int)o->len);
     }
@@ -507,6 +589,9 @@ static int serve_until_cleared(owner_t *o)
         XNextEvent(o->d, &ev);
         if (ev.type == SelectionRequest)
             serve_request(o, &ev.xselectionrequest);
+        else if (ev.type == PropertyNotify &&
+                 ev.xproperty.state == PropertyDelete)
+            continue_incr_send(o, ev.xproperty.window, ev.xproperty.atom);
         else if (lost_ownership(o, &ev))
             return 0;
     }
@@ -518,7 +603,7 @@ static int acquire_ownership(owner_t *o, const char *mime,
 {
     o->d = XOpenDisplay(NULL);
     if (!o->d)
-        return fail("cpclip(x11): cannot open display");
+        return fail("x11: cannot open display");
 
     intern_atoms(o->d, &o->a);
     Window root = DefaultRootWindow(o->d);
@@ -529,6 +614,16 @@ static int acquire_ownership(owner_t *o, const char *mime,
                                        MAX_SERVED_TARGETS);
     o->owner_time = capture_timestamp(o->d, o->win);
 
+    /* Survive requestors that vanish mid-INCR rather than aborting the daemon. */
+    XSetErrorHandler(ignore_x_error);
+
+    /* Largest payload one ChangeProperty can carry (request size is in 4-byte
+     * units; leave headroom for the request header). Above this we use INCR. */
+    long max_req = XExtendedMaxRequestSize(o->d);
+    if (max_req == 0)
+        max_req = XMaxRequestSize(o->d);
+    o->max_chunk = (size_t)(max_req - 64) * 4;
+
     int error_base = 0;
     o->have_xfixes = XFixesQueryExtension(o->d, &o->xfixes_event_base, &error_base);
     if (o->have_xfixes)
@@ -538,30 +633,8 @@ static int acquire_ownership(owner_t *o, const char *mime,
     XSetSelectionOwner(o->d, o->a.clipboard, o->win, o->owner_time);
     XSync(o->d, False);
     if (XGetSelectionOwner(o->d, o->a.clipboard) != o->win)
-        return fail("cpclip(x11): failed to acquire CLIPBOARD");
+        return fail("x11: failed to acquire CLIPBOARD");
     return 0;
-}
-
-static void detach_from_terminal(void)
-{
-    int devnull = open("/dev/null", O_RDWR);
-    if (devnull < 0)
-        return;
-    dup2(devnull, STDIN_FILENO);
-    dup2(devnull, STDOUT_FILENO);
-    dup2(devnull, STDERR_FILENO);
-    if (devnull > STDERR_FILENO)
-        close(devnull);
-}
-
-/* Parent side of the fork: block until the child signals it owns the selection
- * (one byte). Pipe EOF means the child died before acquiring it. */
-static int wait_for_owner_ready(int read_fd)
-{
-    char ready;
-    ssize_t n = read(read_fd, &ready, 1);
-    close(read_fd);
-    return n == 1 ? 0 : -1;
 }
 
 /* Child side of the fork: become the persistent owner, signal readiness, then
@@ -573,7 +646,7 @@ static void run_as_owner_daemon(int ready_fd, const char *mime,
     owner_t o = {0};
     if (acquire_ownership(&o, mime, data, len) != 0)
         _exit(1);                               /* no signal => parent sees EOF */
-    if (write(ready_fd, "1", 1) != 1)
+    if (signal_owner_ready(ready_fd) != 0)
         _exit(1);
     close(ready_fd);
 
@@ -595,13 +668,13 @@ static int x11_set(const char *mime, const void *data, size_t len)
      * race: the parent does not return success until the child owns it. */
     int handshake[2];
     if (pipe(handshake) != 0) {
-        perror("cpclip(x11): pipe");
+        perror("x11: pipe");
         return -1;
     }
 
     pid_t pid = fork();
     if (pid < 0) {
-        perror("cpclip(x11): fork");
+        perror("x11: fork");
         return -1;
     }
 
@@ -612,7 +685,7 @@ static int x11_set(const char *mime, const void *data, size_t len)
 
     close(handshake[1]);
     if (wait_for_owner_ready(handshake[0]) != 0)
-        return fail("cpclip(x11): owner child failed to start");
+        return fail("x11: owner child failed to start");
     return 0;
 }
 
@@ -622,7 +695,7 @@ static int x11_clear(void)
 {
     Display *d = XOpenDisplay(NULL);
     if (!d)
-        return fail("cpclear(x11): cannot open display");
+        return fail("x11: cannot open display");
 
     Atom clipboard = XInternAtom(d, "CLIPBOARD", False);
     XSetSelectionOwner(d, clipboard, None, CurrentTime);    /* relinquish */

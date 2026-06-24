@@ -1,0 +1,8 @@
+# Build output (objects + generated wayland-scanner glue)
+build/
+
+# Binary and its argv[0] symlinks
+/cpclip
+/cpadd
+/cppaste
+/cpclear

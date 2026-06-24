@@ -1,0 +1,168 @@
+.TH CPCLIP 1 "2026" "cpclip" "User Commands"
+.SH NAME
+cpclip, cpadd, cppaste, cpclear \- command-line clipboard for X11 and Wayland
+.SH SYNOPSIS
+.B cpclip
+.RI [ TEXT ]
+.RB [ \-t
+.IR MIME ]
+.RB [ \-f ]
+.RB [ \-\-backend
+.IR NAME ]
+.br
+.B cpadd
+.RI [ TEXT ]
+.RB [ \-t
+.IR MIME ]
+.RB [ \-\-separator
+.IR STR ]
+.RB [ \-f ]
+.RB [ \-\-backend
+.IR NAME ]
+.br
+.B cppaste
+.RB [ \-t
+.IR MIME ]
+.RB [ \-n ]
+.RB [ \-\-backend
+.IR NAME ]
+.br
+.B cpclear
+.RB [ \-\-backend
+.IR NAME ]
+.SH DESCRIPTION
+One binary with four faces, selected by the name it is invoked as. It captures
+process output to the system clipboard and serves the clipboard back to process
+input, on both X11 and Wayland, behind one identical command interface.
+.TP
+.B cpclip
+Read standard input (or the
+.I TEXT
+argument) and replace the clipboard with it.
+.TP
+.B cpadd
+Append standard input (or
+.IR TEXT )
+to the clipboard, joined by a separator (default newline). On an empty
+clipboard this is identical to
+.BR cpclip .
+It refuses to overwrite a non-text selection.
+.TP
+.B cppaste
+Write the clipboard to standard output.
+.TP
+.B cpclear
+Relinquish ownership so the clipboard becomes empty.
+.PP
+Because X11 and Wayland have no system-owned clipboard buffer, the copying
+process itself is the storage:
+.B cpclip
+and
+.B cpadd
+fork a background process that owns the selection and serves it on demand. The
+parent does not exit until that child confirms ownership. A running clipboard
+manager (e.g. KDE's) typically takes over and provides persistence after the
+owner exits.
+.SH OPTIONS
+.TP
+.BI \-t " MIME" "\fR, \fP" \-\-type " MIME"
+Content type. On copy it is advertised (and served) alongside the default text
+set; on paste it is the preferred type to request.
+.TP
+.BR \-\-separator " " \fISTR\fP
+.RB ( cpadd
+only) String placed between the existing content and the appended content.
+Defaults to a newline.
+.TP
+.BR \-n ", " \-\-no\-newline
+.RB ( cppaste
+only) Do not append a trailing newline. By default a single newline is appended
+only when the data does not already end with one. Use
+.B \-n
+for byte-exact binary output.
+.TP
+.BR \-f ", " \-\-foreground
+.RB ( cpclip ", " cpadd
+only) Stay in the foreground and serve the selection until another client takes
+it, instead of forking into the background.
+.TP
+.BR \-\-backend " " \fINAME\fP
+Force a backend:
+.BR x11 ", " wayland ", " null ", or " auto
+(the default). Auto selects Wayland when
+.B $WAYLAND_DISPLAY
+is set, else X11 when
+.B $DISPLAY
+is set.
+.TP
+.BR \-h ", " \-\-help
+Print usage and exit.
+.SH "TERMINAL PASS-THROUGH"
+.B cpclip
+and
+.B cpadd
+mirror standard input to standard output only when standard output is a
+terminal, so
+.RB ` "cmd | cpclip" `
+shows the output and copies it, while
+.RB ` "cmd | cpclip | other" `
+copies silently without disturbing the pipeline.
+.SH "EXIT STATUS"
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Runtime error (no display server, unreadable selection, etc.).
+.TP
+.B 2
+Usage error (unknown invocation name or inapplicable flag).
+.SH ENVIRONMENT
+.TP
+.B WAYLAND_DISPLAY
+If set, the
+.B auto
+backend uses Wayland.
+.TP
+.B DISPLAY
+If set (and Wayland is not), the
+.B auto
+backend uses X11.
+.SH EXAMPLES
+.PP
+Copy a command's output and also see it:
+.PP
+.RS
+.nf
+make 2>&1 | cpclip
+.fi
+.RE
+.PP
+Accumulate several outputs into one clipboard entry:
+.PP
+.RS
+.nf
+git rev-parse HEAD | cpclip
+date              | cpadd
+uname -a          | cpadd
+cppaste
+.fi
+.RE
+.PP
+Paste byte-exact binary data:
+.PP
+.RS
+.nf
+cppaste -n > image.png
+.fi
+.RE
+.SH NOTES
+All clipboard payloads are handled as raw bytes, so NUL bytes and arbitrary
+binary survive a round trip. Primary and secondary selections are not supported.
+With a running clipboard manager,
+.B cpclear
+may be immediately undone by the manager restoring its history.
+.SH "SEE ALSO"
+.BR wl\-clipboard (1),
+.BR xclip (1),
+.BR xsel (1)

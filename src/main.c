@@ -141,8 +141,7 @@ static const clipboard_backend *resolve_backend(const char *name)
     case BK_X11:
         return backend_x11();
     case BK_WAYLAND:
-        fprintf(stderr, "wayland backend not built yet (Phase 2); use --backend null\n");
-        return NULL;
+        return backend_wayland();
     case BK_NONE:
     default:
         fprintf(stderr, "no display server; clipboard unavailable in this session\n");
@@ -291,8 +290,13 @@ static int do_paste(const clipboard_backend *b, const options *opt)
 {
     void *data = NULL;
     size_t len = 0;
-    if (b->get(opt->mime, &data, &len) != 0)
+    int status = b->get(opt->mime, &data, &len);
+    if (status == CLIP_GET_NO_TEXT) {
+        fprintf(stderr, "cppaste: clipboard has no text content\n");
         return 1;
+    }
+    if (status != CLIP_GET_OK)
+        return 1;                       /* infrastructure error, already reported */
 
     int rc = 0;
     if (len && write_all(STDOUT_FILENO, data, len) != 0)
