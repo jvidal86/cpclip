@@ -5,10 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build
 
 ```sh
-make          # builds cpclip + cpadd/cppaste/cpclear symlinks (in the repo root)
-make test     # runs the test matrix (tests/run.sh) on every available backend
-make clean    # removes the binary, symlinks, and build/ (objects + generated glue)
-make install  # installs binary, symlinks, and man pages (PREFIX overridable)
+make           # builds cpclip + cpadd/cppaste/cpclear symlinks (in the repo root)
+make test      # E2E matrix (tests/run.sh) on every available backend; no extra deps
+make test-unit # Criterion unit tests (needs libcriterion-dev)
+make check     # both: test-unit then test
+make clean     # removes the binary, symlinks, and build/ (objects + generated glue)
+make install   # installs binary, symlinks, and man pages (PREFIX overridable)
 ```
 
 Always build with `-Wall -Wextra` (already in `CFLAGS`) and fix all warnings before committing.
@@ -42,6 +44,13 @@ echo hi | ./cpclip --backend null && ./cppaste --backend null   # → hi
 ```
 
 The dev box is KDE Plasma (KWin) Wayland + XWayland with no X-side clipboard manager.
+
+Unit tests use **Criterion** (`make test-unit`, CI job `unit-tests`, dev-dep
+`libcriterion-dev`) and cover the pure modules only — `parse_size`
+(`src/parse_util.c`), `read_all_fd`/`write_all` (`src/io_util.c`), and `clip_add`
+(`src/ops_add.c`, via an in-memory mock backend in `tests/test_ops_add.c`). The
+backends are intentionally left to the E2E suite (they need a display server).
+Criterion is test-only and does not affect the shipped packages.
 
 ## Architecture
 

@@ -37,6 +37,18 @@ jobs:
       - name: Null-backend tests
         run: make test          # no DISPLAY / WAYLAND_DISPLAY -> null backend only
 
+  unit-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            $BUILD_DEPS libcriterion-dev
+      - name: Unit tests (Criterion)
+        run: make test-unit
+
   static-analysis:
     runs-on: ubuntu-24.04
     steps:

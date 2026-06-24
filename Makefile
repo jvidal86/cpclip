@@ -37,7 +37,7 @@ EXTDC_SRC    = $(BUILDDIR)/ext-data-control-v1-protocol.c
 # Common + null (Phase 0), X11 (Phase 1), Wayland (Phase 2). proc_util holds the
 # fork/handshake plumbing shared by the two forking backends.
 OBJS = $(addprefix $(BUILDDIR)/, \
-       main.o io_util.o ops_add.o proc_util.o \
+       main.o io_util.o ops_add.o proc_util.o parse_util.o \
        backend_null.o backend_x11.o backend_wayland.o \
        ext-data-control-v1-protocol.o)
 
@@ -49,7 +49,7 @@ cpclip_flags := -D_GNU_SOURCE -I$(BUILDDIR) \
                 $(shell pkg-config --cflags x11 xfixes wayland-client)
 LIBS         := $(shell pkg-config --libs x11 xfixes wayland-client)
 
-HEADERS = $(addprefix $(SRCDIR)/, backend.h io_util.h ops_add.h proc_util.h)
+HEADERS = $(addprefix $(SRCDIR)/, backend.h io_util.h ops_add.h proc_util.h parse_util.h)
 
 all: $(BIN) $(LINKS)
 
@@ -93,8 +93,26 @@ install: all
 test: all
 	./tests/run.sh
 
+# --- unit tests (Criterion; test-only dependency: libcriterion-dev) --------
+# Links only the pure modules under test (no main(), no backends, no display
+# server). Kept separate from `make test` so the E2E suite stays dependency-free.
+CRITERION_CFLAGS := $(shell pkg-config --cflags criterion 2>/dev/null)
+CRITERION_LIBS   := $(shell pkg-config --libs criterion 2>/dev/null || echo -lcriterion)
+UNIT_SRC  := $(wildcard tests/test_*.c)
+UNIT_DEPS := $(addprefix $(BUILDDIR)/, io_util.o ops_add.o parse_util.o)
+
+$(BUILDDIR)/test-unit: $(UNIT_SRC) $(UNIT_DEPS) | $(BUILDDIR)
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -I$(SRCDIR) $(CRITERION_CFLAGS) \
+	      $(UNIT_SRC) $(UNIT_DEPS) $(CRITERION_LIBS) -o $@
+
+test-unit: $(BUILDDIR)/test-unit
+	./$(BUILDDIR)/test-unit
+
+# Run both suites.
+check: test-unit test
+
 clean:
 	rm -f $(BIN) $(LINKS)
 	rm -rf $(BUILDDIR)
 
-.PHONY: all install test clean
+.PHONY: all install test test-unit check clean

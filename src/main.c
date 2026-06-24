@@ -4,10 +4,8 @@
  * One binary with four faces, selected by the name it is invoked as (the
  * BusyBox / gzip-gunzip-zcat pattern). See DESIGN.md §4.
  */
-#include <errno.h>
 #include <getopt.h>
 #include <signal.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +14,7 @@
 #include "backend.h"
 #include "io_util.h"
 #include "ops_add.h"
+#include "parse_util.h"
 
 /* Injected by the Makefile (-DCPCLIP_VERSION); fallback for ad-hoc builds. */
 #ifndef CPCLIP_VERSION
@@ -175,35 +174,6 @@ enum { OPT_BACKEND = 256, OPT_SEPARATOR };
 typedef struct {
     int type, foreground, no_newline, separator, maxmem;
 } seen_flags;
-
-/* Parse a human size like "200", "512K", "10M", "2G" (K/M/G are binary,
- * 1024-based) into bytes. "0" means unlimited. Returns 0, or -1 if malformed. */
-static int parse_size(const char *s, size_t *out)
-{
-    char *end;
-    errno = 0;
-    unsigned long long v = strtoull(s, &end, 10);
-    if (end == s || errno)
-        return -1;
-    unsigned long long mult = 1;
-    if (*end) {
-        switch (*end++) {
-        case 'k': case 'K': mult = 1024ULL; break;
-        case 'm': case 'M': mult = 1024ULL * 1024; break;
-        case 'g': case 'G': mult = 1024ULL * 1024 * 1024; break;
-        case 'b': case 'B': mult = 1; break;
-        default: return -1;
-        }
-        if (*end == 'i' || *end == 'I') end++;      /* accept KiB / MiB / GiB */
-        if (*end == 'b' || *end == 'B') end++;      /* accept KB / MB / ...   */
-        if (*end)
-            return -1;
-    }
-    if (mult && v > (unsigned long long)SIZE_MAX / mult)
-        return -1;                                   /* overflow */
-    *out = (size_t)(v * mult);
-    return 0;
-}
 
 /* Reject flags that do not apply to this command. Returns PARSE_OK or
  * PARSE_USAGE_ERROR. */
