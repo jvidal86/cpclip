@@ -55,6 +55,15 @@ jobs:
           nfpm package --packager rpm --target dist/
           nfpm package --packager apk --target dist/
 
+      - name: Build portable binary tarball (for the curl|sh installer)
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          make clean
+          make install DESTDIR="$PWD/tar" PREFIX=
+          strip tar/bin/cpclip || true
+          tar -C tar -czf "dist/cpclip-${VERSION}-linux-amd64.tar.gz" bin share
+
       - name: Checksums
         run: |
           cd dist
@@ -68,5 +77,6 @@ jobs:
             dist/*.deb
             dist/*.rpm
             dist/*.apk
+            dist/*.tar.gz
             dist/SHA256SUMS
           generate_release_notes: true

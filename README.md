@@ -14,14 +14,25 @@ One binary with four faces, dispatched on `argv[0]` (the BusyBox pattern):
 | `cppaste` | clipboard → stdout                                  |
 | `cpclear` | empty the clipboard                                 |
 
+## Install
+
+One-liner — downloads the latest release binary into `/usr/local`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/jvidal86/cpclip/main/install.sh | sh
+```
+
+`wget -qO- … | sh` works too. Override `PREFIX` for a no-sudo install
+(`PREFIX=$HOME/.local`) or pin a version (`CPCLIP_VERSION=v0.1.0`).
+
+Or grab a native `.deb` / `.rpm` / `.apk` from a
+[Release](https://github.com/jvidal86/cpclip/releases), or build from source:
+
 ```sh
 make            # builds cpclip + the cpadd/cppaste/cpclear symlinks
 make test       # runs the test matrix on whatever backends are available
 sudo make install
 ```
-
-Prebuilt `.deb` / `.rpm` / `.apk` packages are attached to each
-[GitHub Release](https://github.com/jvidal86/cpclip/releases).
 
 ## Examples
 
