@@ -13,6 +13,7 @@
 
 #include "backend.h"
 #include "io_util.h"
+#include "mime_sniff.h"
 #include "ops_add.h"
 #include "parse_util.h"
 
@@ -349,7 +350,8 @@ static int do_copy(const clipboard_backend *b, const options *opt, verb_t verb)
     if (collect_input(opt, verb, &data, &len, &owned) != 0)
         return 1;
 
-    int rc = b->set(opt->mime, data, len);
+    const char *mime = opt->mime ? opt->mime : sniff_mime(data, len);
+    int rc = b->set(mime, data, len);
     free(owned);
     return rc == 0 ? 0 : 1;
 }
@@ -372,7 +374,15 @@ static int do_paste(const clipboard_backend *b, const options *opt)
 {
     void *data = NULL;
     size_t len = 0;
+    int is_binary = 0;
     int status = b->get(opt->mime, &data, &len);
+    if (status == CLIP_GET_NO_TEXT && !opt->mime) {
+        /* No text type offered — fall back to raw binary. This handles
+         * content stored by `cpclip` on data that sniffed as octet-stream. */
+        status = b->get("application/octet-stream", &data, &len);
+        if (status == CLIP_GET_OK)
+            is_binary = 1;
+    }
     if (status == CLIP_GET_NO_TEXT) {
         fprintf(stderr, "cppaste: clipboard has no text content\n");
         return 1;
@@ -386,8 +396,8 @@ static int do_paste(const clipboard_backend *b, const options *opt)
 
     /* Default: append a trailing newline only if the data lacks one, so terminal
      * output is tidy and round-trips do not accumulate blank lines. -n suppresses
-     * it entirely (use it for exact binary output). */
-    if (rc == 0 && !opt->no_newline &&
+     * it entirely (binary data always skips this to avoid corruption). */
+    if (rc == 0 && !opt->no_newline && !is_binary &&
         !(len && ((const char *)data)[len - 1] == '\n')) {
         if (write_all(STDOUT_FILENO, "\n", 1) != 0)
             rc = 1;

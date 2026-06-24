@@ -1,3 +1,48 @@
+cpclip (0.2.2-1) unstable; urgency=medium
+
+  * Add MIME type sniffing (mime_sniff.c): probe up to 8 KiB of input to
+    distinguish binary (application/octet-stream), UTF-8 text
+    (text/plain;charset=utf-8), and legacy 8-bit text (text/plain).
+    cpclip/cuclip now advertise the correct MIME type automatically when
+    -t is not given.
+  * cppaste: fall back to application/octet-stream when no text type is
+    offered, so binary content stored by cpclip can be retrieved verbatim.
+    Binary content never gets the auto-appended trailing newline.
+
+ -- J Vidal <j.vidal.rodriguez@gmail.com>  Wed, 25 Jun 2026 00:00:00 +0200
+
+cpclip (0.2.1-1) unstable; urgency=high
+
+  * Security: fix integer overflows in clip_add, buf_append (X11), and
+    read_all_fd that could cause heap under-allocation on adversarial input.
+  * Security: add O_NOFOLLOW to null-backend open() calls to block symlink
+    attacks via /tmp.
+  * Security: add EINTR retry loops in proc_util.c readiness handshake.
+  * Security: fix Wayland wrong return code for non-text offers (was
+    CLIP_GET_ERROR, must be CLIP_GET_NO_TEXT) — prevented cpadd/cuadd from
+    correctly refusing to clobber non-text selections.
+  * Security: fix Wayland offer leak when more than MAX_OFFERS offers arrive;
+    raise MAX_OFFERS from 8 to 32.
+  * Security: add 512 MiB receive cap in Wayland backend (matching X11).
+  * Security: fix X11 INCR send integer truncation when casting chunk size
+    to int for XChangeProperty.
+  * Security: add 4095-byte cap on MIME type length in null_set.
+
+ -- J Vidal <j.vidal.rodriguez@gmail.com>  Wed, 24 Jun 2026 19:47:37 +0200
+
+cpclip (0.2.0-1) unstable; urgency=medium
+
+  * Add cuclip and cuadd: silent-copy variants of cpclip/cpadd that never
+    echo stdin to stdout, even when stdout is a terminal.
+  * Add man pages cuclip(1) and cuadd(1).
+  * Add Usage section to README with redirection examples.
+  * Add 17 new test assertions for cuclip/cuadd including PTY-based TTY
+    mirror suppression test.
+  * ops_add: pass prog name to clip_add() so error messages name the correct
+    invoking command.
+
+ -- J Vidal <j.vidal.rodriguez@gmail.com>  Wed, 24 Jun 2026 19:47:37 +0200
+
 cpclip (0.1.0-1) unstable; urgency=medium
 
   * Initial release.
