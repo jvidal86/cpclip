@@ -29,6 +29,10 @@
 #include <unistd.h>
 #include <wayland-client.h>
 
+/* Hard cap on bytes read from a single clipboard offer (same rationale as
+ * RECV_MAX_BYTES in backend_x11.c — guard against a malicious owner). */
+#define RECV_MAX_BYTES ((size_t)512 * 1024 * 1024)
+
 static const char *wl_backend_name(void) { return "wayland"; }
 
 static int fail(const char *msg)
@@ -163,7 +167,7 @@ static const struct ext_data_control_offer_v1_listener offer_listener = {
     .offer = on_offer_mime,
 };
 
-#define MAX_OFFERS 8
+#define MAX_OFFERS 32
 
 typedef struct {
     struct ext_data_control_offer_v1 *offers[MAX_OFFERS];
@@ -242,16 +246,30 @@ static int receive_offer(struct wl_display *d,
     wl_display_flush(d);                        /* push the request to the server */
     close(fds[1]);                              /* the owner holds the write end */
 
-    int rc = read_all_fd(fds[0], out, out_len, -1, 0);
+    int rc = read_all_fd(fds[0], out, out_len, -1, RECV_MAX_BYTES);
     close(fds[0]);
+    if (rc == CLIP_READ_TOO_LARGE) {
+        fprintf(stderr, "wayland: clipboard data exceeds %zu-byte safety cap\n",
+                RECV_MAX_BYTES);
+        return -1;
+    }
     return rc == 0 ? 0 : -1;
 }
 
 static void get_state_cleanup(get_state *g)
 {
+    int sel_destroyed = 0;
     for (int i = 0; i < g->n_offers; i++) {
+        if (g->offers[i] == g->selection)
+            sel_destroyed = 1;
         mime_list_free(offer_mimes(g->offers[i]));
         ext_data_control_offer_v1_destroy(g->offers[i]);
+    }
+    /* If the selection offer overflowed MAX_OFFERS it is not in the tracked
+     * array; destroy it separately to avoid a leak. */
+    if (g->selection && !sel_destroyed) {
+        mime_list_free(offer_mimes(g->selection));
+        ext_data_control_offer_v1_destroy(g->selection);
     }
 }
 
@@ -274,7 +292,7 @@ static int wl_get(const char *mime, void **out, size_t *out_len)
     if (g.selection) {
         const char *chosen = choose_mime(offer_mimes(g.selection), mime);
         if (!chosen)
-            rc = fail("wayland: clipboard offers no text type");
+            rc = CLIP_GET_NO_TEXT;              /* owner offers no text type */
         else
             rc = receive_offer(c.display, g.selection, chosen, out, out_len);
     }

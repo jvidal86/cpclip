@@ -3,6 +3,7 @@
 #include "io_util.h"
 
 #include <errno.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -30,9 +31,11 @@ int read_all_fd(int fd, void **out, size_t *out_len, int mirror_fd, size_t limit
 {
     size_t cap = READ_INITIAL_CAP, len = 0;
     /* When limited, never hold more than limit+1 bytes: the +1 lets an
-     * exactly-`limit` input fit while a one-byte-over input still trips. */
-    if (limit && cap > limit + 1)
-        cap = limit + 1;
+     * exactly-`limit` input fit while a one-byte-over input still trips.
+     * Guard against limit==SIZE_MAX wrapping limit+1 to 0. */
+    size_t lim1 = (limit < SIZE_MAX) ? limit + 1 : SIZE_MAX;
+    if (limit && cap > lim1)
+        cap = lim1;
     char *buf = (char *)malloc(cap);
     if (!buf)
         return -1;
@@ -40,8 +43,8 @@ int read_all_fd(int fd, void **out, size_t *out_len, int mirror_fd, size_t limit
     for (;;) {
         if (len == cap) {
             size_t ncap = cap * 2;          /* double on exhaustion */
-            if (limit && ncap > limit + 1)
-                ncap = limit + 1;
+            if (limit && ncap > lim1)
+                ncap = lim1;
             if (ncap <= cap) {              /* at the ceiling with no room left */
                 free(buf);
                 return CLIP_READ_TOO_LARGE;

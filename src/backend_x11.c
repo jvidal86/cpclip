@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +42,9 @@
 #define MAX_OFFERED_TARGETS    64
 #define MAX_GET_PREFERENCES    8
 #define MAX_SERVED_TARGETS     8
+/* Hard cap on total bytes accumulated from a single clipboard read. Guards
+ * against a malicious clipboard owner triggering unbounded memory growth. */
+#define RECV_MAX_BYTES         ((size_t)512 * 1024 * 1024)
 
 static const char *x11_name(void) { return "x11"; }
 
@@ -143,14 +147,23 @@ static int wait_property_new_value(Display *d, Window w, Atom prop, int timeout_
 /* ---- reading the selection property ------------------------------------ */
 
 /* Append `n` bytes to a grow-by-doubling buffer. Returns the (possibly moved)
- * buffer, or NULL after freeing the old one on OOM. */
+ * buffer, or NULL after freeing the old one on OOM or overflow. */
 static unsigned char *buf_append(unsigned char *buf, size_t *cap, size_t *len,
                                  const unsigned char *src, size_t n)
 {
+    if (n > SIZE_MAX - *len) {          /* addition would overflow size_t */
+        free(buf);
+        return NULL;
+    }
     if (*len + n > *cap) {
         size_t ncap = *cap;
-        while (*len + n > ncap)
+        do {
+            if (ncap > SIZE_MAX / 2) {  /* doubling would overflow */
+                free(buf);
+                return NULL;
+            }
             ncap *= 2;
+        } while (*len + n > ncap);
         unsigned char *grown = realloc(buf, ncap);
         if (!grown) {
             free(buf);
@@ -178,7 +191,18 @@ static int read_property_whole(Display *d, Window w, Atom prop,
                            &type, &fmt, &nitems, &after, &val) != Success)
         return -1;
 
-    size_t len = nitems * (size_t)(fmt / 8);
+    /* fmt must be 8/16/32; guard against a rogue server returning something
+     * unexpected, and against the multiplication overflowing size_t. */
+    if (fmt != 8 && fmt != 16 && fmt != 32) {
+        if (val) XFree(val);
+        return -1;
+    }
+    size_t bytes_per_item = (size_t)(fmt / 8);  /* 1, 2, or 4 */
+    if (nitems > SIZE_MAX / bytes_per_item) {
+        if (val) XFree(val);
+        return -1;
+    }
+    size_t len = nitems * bytes_per_item;
     void *data = malloc(len ? len : 1);
     if (!data) {
         if (val) XFree(val);
@@ -222,15 +246,34 @@ static int read_property_incr(Display *d, Window w, Atom prop,
             return -1;
         }
 
-        size_t n = nitems * (size_t)(fmt / 8);
-        if (n == 0) {                           /* end of transfer */
+        /* Zero nitems signals end of INCR transfer. */
+        if (nitems == 0) {
             if (chunk) XFree(chunk);
             break;
         }
+        /* Validate fmt; guard nitems * bytes_per_item against overflow. */
+        if (fmt != 8 && fmt != 16 && fmt != 32) {
+            if (chunk) XFree(chunk);
+            free(buf);
+            return -1;
+        }
+        size_t bytes_per_item = (size_t)(fmt / 8);
+        if (nitems > SIZE_MAX / bytes_per_item) {
+            if (chunk) XFree(chunk);
+            free(buf);
+            return -1;
+        }
+        size_t n = nitems * bytes_per_item;
         buf = buf_append(buf, &cap, &len, chunk, n);
         if (chunk) XFree(chunk);
         if (!buf)
             return -1;
+        if (len > RECV_MAX_BYTES) {
+            fprintf(stderr, "x11: clipboard data exceeds %zu-byte safety cap\n",
+                    RECV_MAX_BYTES);
+            free(buf);
+            return -1;
+        }
     }
 
     *out = buf;
@@ -490,7 +533,11 @@ static int begin_incr_send(owner_t *o, Window requestor, Atom prop, Atom target)
                       .offset = 0, .active = 1 };
 
     XSelectInput(o->d, requestor, PropertyChangeMask);
-    unsigned long total = (unsigned long)o->len;
+    /* INCR property is format=32; Xlib transmits only the low 32 bits on LP64.
+     * Cap the hint at UINT32_MAX for payloads >4 GiB (a size hint, not exact). */
+    unsigned long total = (o->len <= (size_t)UINT32_MAX)
+                          ? (unsigned long)o->len
+                          : (unsigned long)UINT32_MAX;
     XChangeProperty(o->d, requestor, prop, o->a.incr, 32, PropModeReplace,
                     (unsigned char *)&total, 1);
     return 1;
@@ -506,8 +553,12 @@ static void continue_incr_send(owner_t *o, Window requestor, Atom prop)
 
     size_t remaining = o->len - x->offset;
     size_t chunk = remaining < o->max_chunk ? remaining : o->max_chunk;
+    /* XChangeProperty takes int for element count; chunk <= max_chunk which is
+     * derived from the server's max request size (always << INT_MAX in practice,
+     * but guard explicitly). */
+    int nelt = (chunk <= (size_t)INT_MAX) ? (int)chunk : INT_MAX;
     XChangeProperty(o->d, requestor, prop, x->target, 8, PropModeReplace,
-                    o->data + x->offset, (int)chunk);
+                    o->data + x->offset, nelt);
     XFlush(o->d);
     x->offset += chunk;
 
@@ -536,9 +587,11 @@ static void answer_target(owner_t *o, XSelectionRequestEvent *req, Atom prop)
                begin_incr_send(o, req->requestor, prop, req->target)) {
         /* Large payload handed over incrementally (property set to INCR). */
     } else {
-        /* A served text target that fits in a single request. */
+        /* A served text target that fits in a single request. o->len <= max_chunk
+         * here (the INCR branch above fires otherwise), so fits in int. */
+        int nelt = (o->len <= (size_t)INT_MAX) ? (int)o->len : INT_MAX;
         XChangeProperty(o->d, req->requestor, prop, req->target, 8,
-                        PropModeReplace, o->data, (int)o->len);
+                        PropModeReplace, o->data, nelt);
     }
 }
 

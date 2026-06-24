@@ -2,6 +2,7 @@
 /* ops_add.c — see ops_add.h and DESIGN.md §5.3. */
 #include "ops_add.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +28,15 @@ int clip_add(const clipboard_backend *b, const char *mime,
         return -1;                          /* infrastructure error, reported */
 
     size_t sep_len = (cur_len && sep) ? strlen(sep) : 0;  /* no leading sep */
+
+    /* Overflow-safe addition: a malicious clipboard owner can supply a large
+     * cur_len; unchecked addition would wrap total to a small value, causing
+     * malloc to under-allocate and the memcpy calls below to overflow the heap. */
+    if (sep_len > SIZE_MAX - cur_len || new_len > SIZE_MAX - cur_len - sep_len) {
+        fprintf(stderr, "%s: combined payload size overflow\n", prog);
+        free(cur);
+        return -1;
+    }
     size_t total = cur_len + sep_len + new_len;
 
     if (max_mem && total > max_mem) {

@@ -59,9 +59,16 @@ static int null_set(const char *mime, const void *data, size_t len)
 {
     if (!mime)
         mime = "text/plain";
-    uint32_t mlen = (uint32_t)strlen(mime);
+    size_t mlen_sz = strlen(mime);
+    if (mlen_sz > 4095) {          /* MIME types are never this long */
+        fprintf(stderr, "null: MIME type too long\n");
+        return -1;
+    }
+    uint32_t mlen = (uint32_t)mlen_sz;
 
-    int fd = open(null_store_path(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    /* O_NOFOLLOW: refuse to follow a symlink at the store path, which could
+     * be planted in /tmp to redirect a write to an attacker-chosen file. */
+    int fd = open(null_store_path(), O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0600);
     if (fd < 0) {
         perror("null: open for write");
         return -1;
@@ -99,7 +106,7 @@ static int null_get(const char *mime, void **out, size_t *out_len)
     *out = NULL;
     *out_len = 0;
 
-    int fd = open(null_store_path(), O_RDONLY);
+    int fd = open(null_store_path(), O_RDONLY | O_NOFOLLOW);
     if (fd < 0) {
         if (errno == ENOENT)
             return CLIP_GET_OK;         /* empty clipboard */
@@ -121,7 +128,9 @@ static int null_get(const char *mime, void **out, size_t *out_len)
 
     const unsigned char *p = (const unsigned char *)all;
     size_t mlen = get_u32_le(p);
-    if (MIME_LEN_BYTES + mlen > all_len) {
+    /* Safe bounds check: avoid MIME_LEN_BYTES + mlen overflowing on 32-bit
+     * (mlen is uint32_t, so the sum could wrap on a 32-bit size_t). */
+    if (mlen > all_len - MIME_LEN_BYTES) {
         free(all);
         return CLIP_GET_OK;
     }
