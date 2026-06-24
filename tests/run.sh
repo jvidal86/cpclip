@@ -119,6 +119,20 @@ check "cpadd refuses non-text" "cpadd: current selection is not text; refusing t
 check "cpadd did not clobber" "PNGDATA" "$(cppaste -t image/png -n --backend null)"
 check "exact-type paste works" "PNGDATA" "$(cppaste -t image/png -n --backend null)"
 
+# --- memory cap (--maxmem, deterministic on null) ------------------------
+echo "== memory cap (--maxmem, null) =="
+cpclear --backend null
+head -c $((11 * 1024 * 1024)) /dev/zero | cpclip --backend null 2>/dev/null
+check "default 10 MiB cap rejects 11 MiB" "1" "$?"
+head -c $((11 * 1024 * 1024)) /dev/zero | cpclip --backend null --maxmem 20M
+check "--maxmem 20M accepts 11 MiB" "0" "$?"
+head -c $((11 * 1024 * 1024)) /dev/zero | cpclip --backend null --maxmem 0
+check "--maxmem 0 disables the cap" "0" "$?"
+check "invalid --maxmem is a usage error" "2" \
+      "$(echo x | cpclip --backend null --maxmem nope >/dev/null 2>&1; echo $?)"
+check "cppaste rejects --maxmem" "cppaste: -m/--maxmem applies only to cpclip/cpadd" \
+      "$(cppaste --maxmem 5M --backend null 2>&1)"
+
 # --- CLI surface: dispatch, flags, exit codes ----------------------------
 echo "== CLI surface =="
 check "unknown invocation name" "invoke as cpclip, cpadd, cppaste, or cpclear" \
@@ -135,7 +149,7 @@ if printf '%s\n' "${backends[@]}" | grep -qx x11; then
     echo "== X11 large input / INCR send =="
     for sz in 1048576 24000000; do          # under, then over the ~16MB ceiling
         head -c "$sz" /dev/urandom >"$BACKUP.in"
-        cpclip --backend x11 <"$BACKUP.in" >/dev/null 2>&1; sleep 0.4
+        cpclip --backend x11 --maxmem 0 <"$BACKUP.in" >/dev/null 2>&1; sleep 0.4
         cppaste -n --backend x11 >"$BACKUP.out" 2>/dev/null
         if cmp -s "$BACKUP.in" "$BACKUP.out"; then
             echo "  PASS: x11 $sz bytes round-trips"; pass=$((pass + 1))

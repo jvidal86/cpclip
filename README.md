@@ -88,6 +88,10 @@ demand (the parent returns only once the child confirms ownership), while
 `cppaste` is a clean one-shot read. A running clipboard manager copies from the
 new owner and provides persistence after it exits.
 
+Because that owner holds the whole payload in memory, a single `cpclip`/`cpadd`
+is capped at **10 MiB** by default (this is a text tool). Raise or remove it with
+`--maxmem` — e.g. `--maxmem 200M`, or `--maxmem 0` to disable the cap.
+
 See [`doc/DESIGN.md`](doc/DESIGN.md) for the architecture and
 [`doc/IMPLEMENTATION.md`](doc/IMPLEMENTATION.md) for the phased build.
 

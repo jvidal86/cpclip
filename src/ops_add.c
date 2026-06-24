@@ -7,7 +7,8 @@
 #include <string.h>
 
 int clip_add(const clipboard_backend *b, const char *mime,
-             const void *new_data, size_t new_len, const char *sep)
+             const void *new_data, size_t new_len, const char *sep,
+             size_t max_mem)
 {
     /* Ordering guarantee: the read below runs to completion (the backend opens
      * its own connection, reads, and closes) BEFORE set() forks the new owner.
@@ -27,6 +28,14 @@ int clip_add(const clipboard_backend *b, const char *mime,
 
     size_t sep_len = (cur_len && sep) ? strlen(sep) : 0;  /* no leading sep */
     size_t total = cur_len + sep_len + new_len;
+
+    if (max_mem && total > max_mem) {
+        fprintf(stderr, "cpadd: result (%zu bytes) would exceed the %zu-byte "
+                        "limit; raise with --maxmem (or --maxmem 0 to disable)\n",
+                total, max_mem);
+        free(cur);
+        return -1;
+    }
 
     char *buf = (char *)malloc(total ? total : 1);
     if (!buf) {

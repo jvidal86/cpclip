@@ -4,8 +4,10 @@
  * One binary with four faces, selected by the name it is invoked as (the
  * BusyBox / gzip-gunzip-zcat pattern). See DESIGN.md §4.
  */
+#include <errno.h>
 #include <getopt.h>
 #include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +28,11 @@ int clip_opt_foreground = 0;
 /* Exit status for a command-line mistake (distinct from a runtime failure). */
 #define EXIT_USAGE 2
 
+/* Default cap on a single copy/add (10 MiB); overridable with --maxmem, and
+ * --maxmem 0 disables it. The owner holds the whole payload in memory, so this
+ * guards against an accidental huge input pinning RAM in the background owner. */
+#define CLIP_DEFAULT_MAXMEM ((size_t)10 * 1024 * 1024)
+
 typedef enum { VERB_COPY, VERB_ADD, VERB_PASTE, VERB_CLEAR } verb_t;
 
 typedef enum { BK_NONE, BK_NULL, BK_X11, BK_WAYLAND } backend_kind;
@@ -39,6 +46,7 @@ typedef struct {
     const char *separator;  /* --separator (add); default "\n" */
     const char *backend;    /* --backend; NULL => auto */
     const char *text;       /* positional TEXT, or NULL => read stdin */
+    size_t max_mem;         /* -m/--maxmem byte cap (copy/add); 0 => unlimited */
     int have_text;
     int foreground;         /* -f */
     int no_newline;         /* -n (paste) */
@@ -65,6 +73,7 @@ static void usage(verb_t v, FILE *f)
             "  Mirrors stdin to stdout when stdout is a TTY.\n"
             "    -t, --type MIME    content type to advertise\n"
             "    -f, --foreground   stay in foreground instead of forking\n"
+            "    -m, --maxmem SIZE  max input size, e.g. 200M (default 10M; 0=off)\n"
             "        --backend NAME x11 | wayland | null | auto (default auto)\n"
             "    -h, --help\n"
             "    -V, --version\n");
@@ -77,6 +86,7 @@ static void usage(verb_t v, FILE *f)
             "    -t, --type MIME    content type\n"
             "        --separator STR joiner between entries (default newline)\n"
             "    -f, --foreground   stay in foreground instead of forking\n"
+            "    -m, --maxmem SIZE  max input size, e.g. 200M (default 10M; 0=off)\n"
             "        --backend NAME x11 | wayland | null | auto (default auto)\n"
             "    -h, --help\n"
             "    -V, --version\n");
@@ -163,8 +173,37 @@ enum { OPT_BACKEND = 256, OPT_SEPARATOR };
 
 /* Which flags appeared on the command line (for per-command rejection). */
 typedef struct {
-    int type, foreground, no_newline, separator;
+    int type, foreground, no_newline, separator, maxmem;
 } seen_flags;
+
+/* Parse a human size like "200", "512K", "10M", "2G" (K/M/G are binary,
+ * 1024-based) into bytes. "0" means unlimited. Returns 0, or -1 if malformed. */
+static int parse_size(const char *s, size_t *out)
+{
+    char *end;
+    errno = 0;
+    unsigned long long v = strtoull(s, &end, 10);
+    if (end == s || errno)
+        return -1;
+    unsigned long long mult = 1;
+    if (*end) {
+        switch (*end++) {
+        case 'k': case 'K': mult = 1024ULL; break;
+        case 'm': case 'M': mult = 1024ULL * 1024; break;
+        case 'g': case 'G': mult = 1024ULL * 1024 * 1024; break;
+        case 'b': case 'B': mult = 1; break;
+        default: return -1;
+        }
+        if (*end == 'i' || *end == 'I') end++;      /* accept KiB / MiB / GiB */
+        if (*end == 'b' || *end == 'B') end++;      /* accept KB / MB / ...   */
+        if (*end)
+            return -1;
+    }
+    if (mult && v > (unsigned long long)SIZE_MAX / mult)
+        return -1;                                   /* overflow */
+    *out = (size_t)(v * mult);
+    return 0;
+}
 
 /* Reject flags that do not apply to this command. Returns PARSE_OK or
  * PARSE_USAGE_ERROR. */
@@ -182,6 +221,9 @@ static parse_result check_flag_applicability(verb_t verb, const seen_flags *seen
                PARSE_USAGE_ERROR;
     if (seen->type && verb == VERB_CLEAR)
         return fprintf(stderr, "%s: -t/--type does not apply to cpclear\n", me),
+               PARSE_USAGE_ERROR;
+    if (seen->maxmem && verb != VERB_COPY && verb != VERB_ADD)
+        return fprintf(stderr, "%s: -m/--maxmem applies only to cpclip/cpadd\n", me),
                PARSE_USAGE_ERROR;
     return PARSE_OK;
 }
@@ -219,6 +261,7 @@ static parse_result parse_args(verb_t verb, int argc, char **argv, options *opt)
         {"no-newline", no_argument,       0, 'n'},
         {"separator",  required_argument, 0, OPT_SEPARATOR},
         {"backend",    required_argument, 0, OPT_BACKEND},
+        {"maxmem",     required_argument, 0, 'm'},
         {"help",       no_argument,       0, 'h'},
         {"version",    no_argument,       0, 'V'},
         {0, 0, 0, 0},
@@ -227,13 +270,21 @@ static parse_result parse_args(verb_t verb, int argc, char **argv, options *opt)
     seen_flags seen = {0};
     int c;
     optind = 1;
-    while ((c = getopt_long(argc, argv, "t:fnhV", longopts, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "t:fnhVm:", longopts, NULL)) != -1) {
         switch (c) {
         case 't': opt->mime = optarg; seen.type = 1; break;
         case 'f': opt->foreground = 1; seen.foreground = 1; break;
         case 'n': opt->no_newline = 1; seen.no_newline = 1; break;
         case OPT_SEPARATOR: opt->separator = optarg; seen.separator = 1; break;
         case OPT_BACKEND: opt->backend = optarg; break;
+        case 'm':
+            if (parse_size(optarg, &opt->max_mem) != 0) {
+                fprintf(stderr, "%s: invalid --maxmem value '%s'\n",
+                        verb_name(verb), optarg);
+                return PARSE_USAGE_ERROR;
+            }
+            seen.maxmem = 1;
+            break;
         case 'V': printf("cpclip %s\n", CPCLIP_VERSION); return PARSE_VERSION;
         case 'h': usage(verb, stdout); return PARSE_HELP;
         default: usage(verb, stderr); return PARSE_USAGE_ERROR; /* getopt explained */
@@ -248,20 +299,37 @@ static parse_result parse_args(verb_t verb, int argc, char **argv, options *opt)
 
 /* Collect the input for copy/add: either the TEXT arg or stdin (mirrored to a
  * TTY stdout). On success sets data, len, and owned (non-NULL if heap-owned). */
+static void report_too_large(verb_t verb, size_t limit)
+{
+    fprintf(stderr, "%s: input exceeds the %zu-byte (~%.1f MiB) limit; raise it "
+                    "with --maxmem (e.g. --maxmem 200M) or disable with --maxmem 0\n",
+            verb_name(verb), limit, (double)limit / (1024.0 * 1024.0));
+}
+
 static int collect_input(const options *opt, verb_t verb,
                          const void **data, size_t *len, void **owned)
 {
     *owned = NULL;
     if (opt->have_text) {
+        size_t tlen = strlen(opt->text);
+        if (opt->max_mem && tlen > opt->max_mem) {
+            report_too_large(verb, opt->max_mem);
+            return -1;
+        }
         *data = opt->text;
-        *len = strlen(opt->text);
+        *len = tlen;
         return 0;
     }
 
     int mirror = isatty(STDOUT_FILENO) ? STDOUT_FILENO : -1;
     void *buf = NULL;
     size_t n = 0;
-    if (read_all_fd(STDIN_FILENO, &buf, &n, mirror) != 0) {
+    int rc = read_all_fd(STDIN_FILENO, &buf, &n, mirror, opt->max_mem);
+    if (rc == CLIP_READ_TOO_LARGE) {
+        report_too_large(verb, opt->max_mem);
+        return -1;
+    }
+    if (rc != 0) {
         fprintf(stderr, "%s: failed to read stdin\n", verb_name(verb));
         return -1;
     }
@@ -293,7 +361,7 @@ static int do_add(const clipboard_backend *b, const options *opt, verb_t verb)
         return 1;
 
     const char *sep = opt->separator ? opt->separator : "\n";
-    int rc = clip_add(b, opt->mime, data, len, sep);
+    int rc = clip_add(b, opt->mime, data, len, sep, opt->max_mem);
     free(owned);
     return rc == 0 ? 0 : 1;
 }
@@ -344,6 +412,7 @@ int main(int argc, char **argv)
     }
 
     options opt = {0};
+    opt.max_mem = CLIP_DEFAULT_MAXMEM;      /* --maxmem may override below */
     parse_result pr = parse_args(verb, argc, argv, &opt);
     if (pr == PARSE_HELP || pr == PARSE_VERSION)
         return 0;

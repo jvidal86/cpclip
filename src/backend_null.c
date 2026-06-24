@@ -109,7 +109,7 @@ static int null_get(const char *mime, void **out, size_t *out_len)
 
     void *all = NULL;
     size_t all_len = 0;
-    int rc = read_all_fd(fd, &all, &all_len, -1);
+    int rc = read_all_fd(fd, &all, &all_len, -1, 0);
     close(fd);
     if (rc != 0)
         return CLIP_GET_ERROR;

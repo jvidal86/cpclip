@@ -242,7 +242,7 @@ static int receive_offer(struct wl_display *d,
     wl_display_flush(d);                        /* push the request to the server */
     close(fds[1]);                              /* the owner holds the write end */
 
-    int rc = read_all_fd(fds[0], out, out_len, -1);
+    int rc = read_all_fd(fds[0], out, out_len, -1, 0);
     close(fds[0]);
     return rc == 0 ? 0 : -1;
 }

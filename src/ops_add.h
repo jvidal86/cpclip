@@ -15,10 +15,12 @@
 
 /* Append `new_data` to the current selection (joined by `sep` when the current
  * selection is non-empty) and write the result back via `b->set`. On an empty
- * clipboard this is exactly a copy — no leading separator.
+ * clipboard this is exactly a copy — no leading separator. If `max_mem` is
+ * nonzero, the concatenated result must not exceed it (else a clean error).
  *
  * Returns 0 on success, -1 on error. */
 int clip_add(const clipboard_backend *b, const char *mime,
-             const void *new_data, size_t new_len, const char *sep);
+             const void *new_data, size_t new_len, const char *sep,
+             size_t max_mem);
 
 #endif /* CLIP_OPS_ADD_H */

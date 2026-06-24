@@ -26,9 +26,13 @@ int write_all(int fd, const void *buf, size_t len)
     return 0;
 }
 
-int read_all_fd(int fd, void **out, size_t *out_len, int mirror_fd)
+int read_all_fd(int fd, void **out, size_t *out_len, int mirror_fd, size_t limit)
 {
     size_t cap = READ_INITIAL_CAP, len = 0;
+    /* When limited, never hold more than limit+1 bytes: the +1 lets an
+     * exactly-`limit` input fit while a one-byte-over input still trips. */
+    if (limit && cap > limit + 1)
+        cap = limit + 1;
     char *buf = (char *)malloc(cap);
     if (!buf)
         return -1;
@@ -36,6 +40,12 @@ int read_all_fd(int fd, void **out, size_t *out_len, int mirror_fd)
     for (;;) {
         if (len == cap) {
             size_t ncap = cap * 2;          /* double on exhaustion */
+            if (limit && ncap > limit + 1)
+                ncap = limit + 1;
+            if (ncap <= cap) {              /* at the ceiling with no room left */
+                free(buf);
+                return CLIP_READ_TOO_LARGE;
+            }
             char *nb = (char *)realloc(buf, ncap);
             if (!nb) {
                 free(buf);
@@ -61,6 +71,10 @@ int read_all_fd(int fd, void **out, size_t *out_len, int mirror_fd)
             (void)write_all(mirror_fd, buf + len, (size_t)n);
 
         len += (size_t)n;
+        if (limit && len > limit) {        /* more data than allowed */
+            free(buf);
+            return CLIP_READ_TOO_LARGE;
+        }
     }
 
     *out = buf;
