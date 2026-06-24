@@ -16,22 +16,44 @@ One binary with four faces, dispatched on `argv[0]` (the BusyBox pattern):
 
 ## Install
 
-One-liner — downloads the latest release binary into `/usr/local`:
+### One-liner (recommended)
+
+Downloads the latest release, verifies its SHA-256, and installs system-wide
+(`wget -qO- … | sh` works too):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/jvidal86/cpclip/main/install.sh | sh
 ```
 
-`wget -qO- … | sh` works too. Override `PREFIX` for a no-sudo install
-(`PREFIX=$HOME/.local`) or pin a version (`CPCLIP_VERSION=v0.1.0`).
+It installs into **`/usr/local`** (using `sudo` only for that step):
 
-Or grab a native `.deb` / `.rpm` / `.apk` from a
-[Release](https://github.com/jvidal86/cpclip/releases), or build from source:
+- `/usr/local/bin/cpclip` plus the `cpadd`, `cppaste`, `cpclear` symlinks
+- `/usr/local/share/man/man1/cp*.1`
+
+`/usr/local/bin` is on the default `PATH`, so `cpclip` works immediately.
+
+**Per-user, no sudo** — install into `~/.local` by setting `PREFIX` on the
+piped shell (note the placement, so the variable reaches the script, not `curl`):
 
 ```sh
-make            # builds cpclip + the cpadd/cppaste/cpclear symlinks
-make test       # runs the test matrix on whatever backends are available
-sudo make install
+curl -fsSL https://raw.githubusercontent.com/jvidal86/cpclip/main/install.sh | PREFIX=$HOME/.local sh
+```
+
+Pin a specific version with `CPCLIP_VERSION=v0.1.1`.
+
+### Native package
+
+Download a `.deb` / `.rpm` / `.apk` from a
+[Release](https://github.com/jvidal86/cpclip/releases) and install it with your
+package manager — it resolves the `libx11` / `libxfixes` / `libwayland-client`
+runtime dependencies for you.
+
+### From source
+
+```sh
+make               # builds cpclip + the cpadd/cppaste/cpclear symlinks
+make test          # runs the test matrix on whatever backends are available
+sudo make install  # installs to /usr/local (override with PREFIX= and DESTDIR=)
 ```
 
 ## Examples
