@@ -8,6 +8,11 @@ CFLAGS   ?= -O2 -g -std=c11 -Wall -Wextra
 CPPFLAGS ?=
 LDFLAGS  ?=
 
+# Version reported by `cpclip --version`. Derived from git for local builds;
+# packaging passes VERSION=x explicitly (debian/rules from the changelog, the
+# release workflow from the tag) so the binary matches the shipped package.
+VERSION  ?= $(or $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//'),0.1.2)
+
 PREFIX   ?= /usr/local
 BINDIR   ?= $(PREFIX)/bin
 MANDIR   ?= $(PREFIX)/share/man/man1
@@ -60,6 +65,9 @@ $(BUILDDIR):
 # Hand-written sources (found in src/ via VPATH) -> build/*.o
 $(BUILDDIR)/%.o: %.c $(HEADERS) | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(cpclip_flags) -c -o $@ $<
+
+# Stamp the version into main.o only.
+$(BUILDDIR)/main.o: cpclip_flags += -DCPCLIP_VERSION='"$(VERSION)"'
 
 # The generated protocol source has a full build/ path, so build it explicitly
 # rather than through the VPATH pattern rule.

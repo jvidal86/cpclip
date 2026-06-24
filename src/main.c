@@ -15,6 +15,11 @@
 #include "io_util.h"
 #include "ops_add.h"
 
+/* Injected by the Makefile (-DCPCLIP_VERSION); fallback for ad-hoc builds. */
+#ifndef CPCLIP_VERSION
+#define CPCLIP_VERSION "dev"
+#endif
+
 /* Set from -f/--foreground; read by forking backends (Phase 1+). */
 int clip_opt_foreground = 0;
 
@@ -27,7 +32,7 @@ typedef enum { BK_NONE, BK_NULL, BK_X11, BK_WAYLAND } backend_kind;
 
 /* Outcome of parsing argv: run the command, exit cleanly after --help, or
  * exit with a usage error. */
-typedef enum { PARSE_OK, PARSE_HELP, PARSE_USAGE_ERROR } parse_result;
+typedef enum { PARSE_OK, PARSE_HELP, PARSE_VERSION, PARSE_USAGE_ERROR } parse_result;
 
 typedef struct {
     const char *mime;       /* -t/--type; NULL => backend default text set */
@@ -61,7 +66,8 @@ static void usage(verb_t v, FILE *f)
             "    -t, --type MIME    content type to advertise\n"
             "    -f, --foreground   stay in foreground instead of forking\n"
             "        --backend NAME x11 | wayland | null | auto (default auto)\n"
-            "    -h, --help\n");
+            "    -h, --help\n"
+            "    -V, --version\n");
         break;
     case VERB_ADD:
         fprintf(f,
@@ -72,7 +78,8 @@ static void usage(verb_t v, FILE *f)
             "        --separator STR joiner between entries (default newline)\n"
             "    -f, --foreground   stay in foreground instead of forking\n"
             "        --backend NAME x11 | wayland | null | auto (default auto)\n"
-            "    -h, --help\n");
+            "    -h, --help\n"
+            "    -V, --version\n");
         break;
     case VERB_PASTE:
         fprintf(f,
@@ -81,14 +88,16 @@ static void usage(verb_t v, FILE *f)
             "    -t, --type MIME    preferred content type\n"
             "    -n, --no-newline   do not append a trailing newline\n"
             "        --backend NAME x11 | wayland | null | auto (default auto)\n"
-            "    -h, --help\n");
+            "    -h, --help\n"
+            "    -V, --version\n");
         break;
     case VERB_CLEAR:
         fprintf(f,
             "Usage: cpclear [--backend NAME]\n"
             "  Empty the clipboard (relinquish ownership).\n"
             "        --backend NAME x11 | wayland | null | auto (default auto)\n"
-            "    -h, --help\n");
+            "    -h, --help\n"
+            "    -V, --version\n");
         break;
     }
 }
@@ -211,19 +220,21 @@ static parse_result parse_args(verb_t verb, int argc, char **argv, options *opt)
         {"separator",  required_argument, 0, OPT_SEPARATOR},
         {"backend",    required_argument, 0, OPT_BACKEND},
         {"help",       no_argument,       0, 'h'},
+        {"version",    no_argument,       0, 'V'},
         {0, 0, 0, 0},
     };
 
     seen_flags seen = {0};
     int c;
     optind = 1;
-    while ((c = getopt_long(argc, argv, "t:fnh", longopts, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "t:fnhV", longopts, NULL)) != -1) {
         switch (c) {
         case 't': opt->mime = optarg; seen.type = 1; break;
         case 'f': opt->foreground = 1; seen.foreground = 1; break;
         case 'n': opt->no_newline = 1; seen.no_newline = 1; break;
         case OPT_SEPARATOR: opt->separator = optarg; seen.separator = 1; break;
         case OPT_BACKEND: opt->backend = optarg; break;
+        case 'V': printf("cpclip %s\n", CPCLIP_VERSION); return PARSE_VERSION;
         case 'h': usage(verb, stdout); return PARSE_HELP;
         default: usage(verb, stderr); return PARSE_USAGE_ERROR; /* getopt explained */
         }
@@ -334,7 +345,7 @@ int main(int argc, char **argv)
 
     options opt = {0};
     parse_result pr = parse_args(verb, argc, argv, &opt);
-    if (pr == PARSE_HELP)
+    if (pr == PARSE_HELP || pr == PARSE_VERSION)
         return 0;
     if (pr != PARSE_OK)
         return EXIT_USAGE;

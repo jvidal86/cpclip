@@ -8,5 +8,9 @@ export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 %:
 	dh $@
 
+# Stamp the binary's --version with the upstream part of the changelog version.
+override_dh_auto_build:
+	dh_auto_build -- VERSION=$(shell dpkg-parsechangelog -S Version | cut -d- -f1)
+
 override_dh_auto_install:
 	dh_auto_install -- PREFIX=/usr

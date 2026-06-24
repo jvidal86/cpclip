@@ -10,9 +10,9 @@
     in {
       packages = forAll (system:
         let pkgs = nixpkgs.legacyPackages.${system}; in {
-          default = pkgs.stdenv.mkDerivation {
+          default = pkgs.stdenv.mkDerivation (finalAttrs: {
             pname = "cpclip";
-            version = "0.1.0";
+            version = "0.1.2";
             src = ../.;                      # the repo root (this flake lives in packaging/)
 
             nativeBuildInputs = [ pkgs.pkg-config pkgs.wayland-scanner ];
@@ -22,7 +22,8 @@
               pkgs.wayland
             ];
 
-            # PREFIX points straight at $out; the Makefile honors PREFIX/DESTDIR.
+            # Stamp --version; PREFIX points straight at $out (Makefile honors it).
+            makeFlags = [ "VERSION=${finalAttrs.version}" ];
             installFlags = [ "PREFIX=${placeholder "out"}" ];
 
             meta = with nixpkgs.lib; {
@@ -32,7 +33,7 @@
               platforms = systems;
               mainProgram = "cpclip";
             };
-          };
+          });
         });
     };
 }

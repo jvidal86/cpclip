@@ -1,7 +1,7 @@
 # RPM spec for cpclip (Fedora/RHEL). Build:
 #   rpmbuild -ba packaging/cpclip.spec   (with the v%{version} tarball in SOURCES)
 Name:           cpclip
-Version:        0.1.0
+Version:        0.1.2
 Release:        1%{?dist}
 Summary:        Minimal X11 and Wayland clipboard CLI
 
@@ -27,7 +27,7 @@ backend requires a compositor implementing ext_data_control_manager_v1.
 
 %build
 %set_build_flags
-%make_build
+%make_build VERSION=%{version}
 
 %install
 %make_install PREFIX=/usr
@@ -45,5 +45,5 @@ backend requires a compositor implementing ext_data_control_manager_v1.
 %{_mandir}/man1/cpclear.1*
 
 %changelog
-* Wed Jun 24 2026 J Vidal <j.vidal.rodriguez@gmail.com> - 0.1.0-1
+* Wed Jun 24 2026 J Vidal <j.vidal.rodriguez@gmail.com> - 0.1.2-1
 - Initial package.
