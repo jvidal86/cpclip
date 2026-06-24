@@ -60,8 +60,9 @@ See [`doc/DESIGN.md`](doc/DESIGN.md) for the architecture and
 
 ## Dependencies
 
-`libx11`, `libxfixes`, `libwayland-client`, `wayland-protocols`, plus
-`wayland-scanner` and a C11 compiler.
+`libx11`, `libxfixes`, `libwayland-client`, plus `wayland-scanner` and a C11
+compiler. The ext-data-control protocol XML is vendored in `protocol/`, so the
+build does not depend on the system `wayland-protocols` version.
 
 ## Not supported
 

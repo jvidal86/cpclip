@@ -21,8 +21,10 @@ LINKS  = cpadd cppaste cpclear
 
 # --- wayland-scanner: ext-data-control glue (generated into build/) -------
 WL_SCANNER  := $(shell pkg-config --variable=wayland_scanner wayland-scanner)
-WL_PROTODIR := $(shell pkg-config --variable=pkgdatadir wayland-protocols)
-EXTDC_XML   := $(WL_PROTODIR)/staging/ext-data-control/ext-data-control-v1.xml
+# The protocol XML is vendored (protocol/) so the build does not depend on the
+# system wayland-protocols version shipping this staging protocol — older
+# distros (Ubuntu 22.04, Debian stable) predate it.
+EXTDC_XML    = protocol/ext-data-control-v1.xml
 EXTDC_HDR    = $(BUILDDIR)/ext-data-control-v1-client-protocol.h
 EXTDC_SRC    = $(BUILDDIR)/ext-data-control-v1-protocol.c
 

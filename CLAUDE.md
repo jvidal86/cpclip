@@ -13,7 +13,7 @@ make install  # installs binary, symlinks, and man pages (PREFIX overridable)
 
 Always build with `-Wall -Wextra` (already in `CFLAGS`) and fix all warnings before committing.
 
-Dependencies: `libx11-dev`, `libxfixes-dev`, `libwayland-dev`, `wayland-protocols`, plus `wayland-scanner` and a C11 compiler.
+Dependencies: `libx11-dev`, `libxfixes-dev`, `libwayland-dev` (provides `wayland-scanner`), and a C11 compiler. The ext-data-control protocol XML is vendored in `protocol/`, so the build does not need the system `wayland-protocols` package.
 
 License: GPL-2.0-or-later (`LICENSE`); every `src/*.c|h` carries an `SPDX-License-Identifier` header. Packaging lives in `debian/`, `nfpm.yaml`, and `packaging/`; CI/release workflows in `.github/workflows/`.
 

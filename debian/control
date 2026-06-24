@@ -6,8 +6,7 @@ Build-Depends: debhelper-compat (= 13),
                pkg-config,
                libx11-dev,
                libxfixes-dev,
-               libwayland-dev,
-               wayland-protocols
+               libwayland-dev
 Standards-Version: 4.7.0
 Homepage: https://github.com/jvidal86/cpclip
 Rules-Requires-Root: no

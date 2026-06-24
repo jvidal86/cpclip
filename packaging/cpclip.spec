@@ -15,7 +15,6 @@ BuildRequires:  pkgconfig
 BuildRequires:  pkgconfig(x11)
 BuildRequires:  pkgconfig(xfixes)
 BuildRequires:  pkgconfig(wayland-client)
-BuildRequires:  wayland-protocols-devel
 
 %description
 cpclip is a small command-line clipboard tool for Linux supporting both X11

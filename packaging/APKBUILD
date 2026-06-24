@@ -9,7 +9,7 @@ pkgdesc="Minimal X11 and Wayland clipboard CLI"
 url="https://github.com/jvidal86/cpclip"
 arch="all"
 license="GPL-2.0-or-later"
-makedepends="libx11-dev libxfixes-dev wayland-dev wayland-protocols pkgconf"
+makedepends="libx11-dev libxfixes-dev wayland-dev pkgconf"
 source="$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz"
 builddir="$srcdir/$pkgname-$pkgver"
 

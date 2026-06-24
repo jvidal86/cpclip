@@ -20,7 +20,6 @@
               pkgs.xorg.libX11
               pkgs.xorg.libXfixes
               pkgs.wayland
-              pkgs.wayland-protocols
             ];
 
             # PREFIX points straight at $out; the Makefile honors PREFIX/DESTDIR.

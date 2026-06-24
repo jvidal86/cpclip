@@ -24,9 +24,28 @@ check() { # desc expected actual
 }
 
 # --- which backends can we exercise here? --------------------------------
+# A display backend is usable only if it can actually open a connection. This
+# skips, e.g., wayland on a compositor without ext-data-control (an old Weston
+# in CI) rather than failing every assertion.
+backend_works() {
+    local err
+    err=$(cppaste --backend "$1" 2>&1 >/dev/null)
+    case "$err" in
+        *"cannot connect"*|*"cannot open display"*|*"ext-data-control"*|*"no wl_seat"*)
+            return 1 ;;
+    esac
+    return 0
+}
+
 backends=(null)
-[ -n "${DISPLAY:-}" ]         && backends+=(x11)
-[ -n "${WAYLAND_DISPLAY:-}" ] && backends+=(wayland)
+if [ -n "${DISPLAY:-}" ]; then
+    if backend_works x11; then backends+=(x11)
+    else echo "note: \$DISPLAY set but x11 backend unusable here — skipping"; fi
+fi
+if [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    if backend_works wayland; then backends+=(wayland)
+    else echo "note: \$WAYLAND_DISPLAY set but wayland backend unusable (compositor lacks ext-data-control?) — skipping"; fi
+fi
 echo "Testing backends: ${backends[*]}"
 
 # --- save/restore the user's real clipboard ------------------------------
