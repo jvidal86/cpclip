@@ -22,7 +22,7 @@ BUILDDIR  = build
 VPATH     = $(SRCDIR)              # let make find sources without src/ prefixes
 
 BIN    = cpclip
-LINKS  = cpadd cppaste cpclear
+LINKS  = cpadd cppaste cpclear cuclip cuadd
 
 # --- wayland-scanner: ext-data-control glue (generated into build/) -------
 WL_SCANNER  := $(shell pkg-config --variable=wayland_scanner wayland-scanner)

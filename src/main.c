@@ -32,7 +32,7 @@ int clip_opt_foreground = 0;
  * guards against an accidental huge input pinning RAM in the background owner. */
 #define CLIP_DEFAULT_MAXMEM ((size_t)10 * 1024 * 1024)
 
-typedef enum { VERB_COPY, VERB_ADD, VERB_PASTE, VERB_CLEAR } verb_t;
+typedef enum { VERB_COPY, VERB_ADD, VERB_PASTE, VERB_CLEAR, VERB_CUT, VERB_CUTADD } verb_t;
 
 typedef enum { BK_NONE, BK_NULL, BK_X11, BK_WAYLAND } backend_kind;
 
@@ -54,10 +54,12 @@ typedef struct {
 static const char *verb_name(verb_t v)
 {
     switch (v) {
-    case VERB_COPY:  return "cpclip";
-    case VERB_ADD:   return "cpadd";
-    case VERB_PASTE: return "cppaste";
-    case VERB_CLEAR: return "cpclear";
+    case VERB_COPY:    return "cpclip";
+    case VERB_ADD:     return "cpadd";
+    case VERB_PASTE:   return "cppaste";
+    case VERB_CLEAR:   return "cpclear";
+    case VERB_CUT:     return "cuclip";
+    case VERB_CUTADD:  return "cuadd";
     }
     return "cpclip";
 }
@@ -108,6 +110,31 @@ static void usage(verb_t v, FILE *f)
             "    -h, --help\n"
             "    -V, --version\n");
         break;
+    case VERB_CUT:
+        fprintf(f,
+            "Usage: cuclip [TEXT] [-t MIME] [-f] [--backend NAME]\n"
+            "  Capture stdin (or TEXT) to the clipboard, replacing it.\n"
+            "  Never echoes to stdout (use cpclip if you want TTY pass-through).\n"
+            "    -t, --type MIME    content type to advertise\n"
+            "    -f, --foreground   stay in foreground instead of forking\n"
+            "    -m, --maxmem SIZE  max input size, e.g. 200M (default 10M; 0=off)\n"
+            "        --backend NAME x11 | wayland | null | auto (default auto)\n"
+            "    -h, --help\n"
+            "    -V, --version\n");
+        break;
+    case VERB_CUTADD:
+        fprintf(f,
+            "Usage: cuadd [TEXT] [-t MIME] [--separator STR] [-f] [--backend NAME]\n"
+            "  Append stdin (or TEXT) to the clipboard (copy if empty).\n"
+            "  Never echoes to stdout (use cpadd if you want TTY pass-through).\n"
+            "    -t, --type MIME    content type\n"
+            "        --separator STR joiner between entries (default newline)\n"
+            "    -f, --foreground   stay in foreground instead of forking\n"
+            "    -m, --maxmem SIZE  max input size, e.g. 200M (default 10M; 0=off)\n"
+            "        --backend NAME x11 | wayland | null | auto (default auto)\n"
+            "    -h, --help\n"
+            "    -V, --version\n");
+        break;
     }
 }
 
@@ -120,10 +147,12 @@ static const char *prog_basename(const char *path)
 
 static int dispatch_verb(const char *prog, verb_t *out)
 {
-    if (!strcmp(prog, "cpclip"))  { *out = VERB_COPY;  return 0; }
-    if (!strcmp(prog, "cpadd"))   { *out = VERB_ADD;   return 0; }
-    if (!strcmp(prog, "cppaste")) { *out = VERB_PASTE; return 0; }
-    if (!strcmp(prog, "cpclear")) { *out = VERB_CLEAR; return 0; }
+    if (!strcmp(prog, "cpclip"))  { *out = VERB_COPY;    return 0; }
+    if (!strcmp(prog, "cpadd"))   { *out = VERB_ADD;     return 0; }
+    if (!strcmp(prog, "cppaste")) { *out = VERB_PASTE;   return 0; }
+    if (!strcmp(prog, "cpclear")) { *out = VERB_CLEAR;   return 0; }
+    if (!strcmp(prog, "cuclip"))  { *out = VERB_CUT;     return 0; }
+    if (!strcmp(prog, "cuadd"))   { *out = VERB_CUTADD;  return 0; }
     return -1;
 }
 
@@ -183,17 +212,19 @@ static parse_result check_flag_applicability(verb_t verb, const seen_flags *seen
     if (seen->no_newline && verb != VERB_PASTE)
         return fprintf(stderr, "%s: -n/--no-newline applies only to cppaste\n", me),
                PARSE_USAGE_ERROR;
-    if (seen->separator && verb != VERB_ADD)
-        return fprintf(stderr, "%s: --separator applies only to cpadd\n", me),
+    if (seen->separator && verb != VERB_ADD && verb != VERB_CUTADD)
+        return fprintf(stderr, "%s: --separator applies only to cpadd/cuadd\n", me),
                PARSE_USAGE_ERROR;
-    if (seen->foreground && verb != VERB_COPY && verb != VERB_ADD)
-        return fprintf(stderr, "%s: -f/--foreground applies only to cpclip/cpadd\n", me),
+    if (seen->foreground && verb != VERB_COPY && verb != VERB_ADD
+                         && verb != VERB_CUT  && verb != VERB_CUTADD)
+        return fprintf(stderr, "%s: -f/--foreground applies only to cpclip/cpadd/cuclip/cuadd\n", me),
                PARSE_USAGE_ERROR;
     if (seen->type && verb == VERB_CLEAR)
         return fprintf(stderr, "%s: -t/--type does not apply to cpclear\n", me),
                PARSE_USAGE_ERROR;
-    if (seen->maxmem && verb != VERB_COPY && verb != VERB_ADD)
-        return fprintf(stderr, "%s: -m/--maxmem applies only to cpclip/cpadd\n", me),
+    if (seen->maxmem && verb != VERB_COPY && verb != VERB_ADD
+                     && verb != VERB_CUT  && verb != VERB_CUTADD)
+        return fprintf(stderr, "%s: -m/--maxmem applies only to cpclip/cpadd/cuclip/cuadd\n", me),
                PARSE_USAGE_ERROR;
     return PARSE_OK;
 }
@@ -206,7 +237,7 @@ static parse_result take_positional(verb_t verb, int argc, char **argv,
     const char *me = verb_name(verb);
     int extra = argc - optind;
 
-    if (verb != VERB_COPY && verb != VERB_ADD) {
+    if (verb != VERB_COPY && verb != VERB_ADD && verb != VERB_CUT && verb != VERB_CUTADD) {
         if (extra > 0)
             return fprintf(stderr, "%s: unexpected argument '%s'\n", me, argv[optind]),
                    PARSE_USAGE_ERROR;
@@ -291,7 +322,8 @@ static int collect_input(const options *opt, verb_t verb,
         return 0;
     }
 
-    int mirror = isatty(STDOUT_FILENO) ? STDOUT_FILENO : -1;
+    int mirror = (verb != VERB_CUT && verb != VERB_CUTADD && isatty(STDOUT_FILENO))
+                 ? STDOUT_FILENO : -1;
     void *buf = NULL;
     size_t n = 0;
     int rc = read_all_fd(STDIN_FILENO, &buf, &n, mirror, opt->max_mem);
@@ -331,7 +363,7 @@ static int do_add(const clipboard_backend *b, const options *opt, verb_t verb)
         return 1;
 
     const char *sep = opt->separator ? opt->separator : "\n";
-    int rc = clip_add(b, opt->mime, data, len, sep, opt->max_mem);
+    int rc = clip_add(b, opt->mime, data, len, sep, opt->max_mem, verb_name(verb));
     free(owned);
     return rc == 0 ? 0 : 1;
 }
@@ -377,7 +409,7 @@ int main(int argc, char **argv)
 
     verb_t verb;
     if (dispatch_verb(prog_basename(argv[0]), &verb) != 0) {
-        fprintf(stderr, "invoke as cpclip, cpadd, cppaste, or cpclear\n");
+        fprintf(stderr, "invoke as cpclip, cpadd, cppaste, cpclear, cuclip, or cuadd\n");
         return EXIT_USAGE;
     }
 
@@ -396,10 +428,12 @@ int main(int argc, char **argv)
         return 1;
 
     switch (verb) {
-    case VERB_COPY:  return do_copy(b, &opt, verb);
-    case VERB_ADD:   return do_add(b, &opt, verb);
-    case VERB_PASTE: return do_paste(b, &opt);
-    case VERB_CLEAR: return do_clear(b);
+    case VERB_COPY:    return do_copy(b, &opt, verb);
+    case VERB_ADD:     return do_add(b, &opt, verb);
+    case VERB_PASTE:   return do_paste(b, &opt);
+    case VERB_CLEAR:   return do_clear(b);
+    case VERB_CUT:     return do_copy(b, &opt, verb);
+    case VERB_CUTADD:  return do_add(b, &opt, verb);
     }
     return 1;
 }

@@ -8,7 +8,7 @@
 
 int clip_add(const clipboard_backend *b, const char *mime,
              const void *new_data, size_t new_len, const char *sep,
-             size_t max_mem)
+             size_t max_mem, const char *prog)
 {
     /* Ordering guarantee: the read below runs to completion (the backend opens
      * its own connection, reads, and closes) BEFORE set() forks the new owner.
@@ -20,7 +20,7 @@ int clip_add(const clipboard_backend *b, const char *mime,
     /* Type coherence: a non-text selection must not be silently clobbered. An
      * empty clipboard, by contrast, is fine — the first add is just a copy. */
     if (status == CLIP_GET_NO_TEXT) {
-        fprintf(stderr, "cpadd: current selection is not text; refusing to overwrite it\n");
+        fprintf(stderr, "%s: current selection is not text; refusing to overwrite it\n", prog);
         return -1;
     }
     if (status != CLIP_GET_OK)
@@ -30,9 +30,9 @@ int clip_add(const clipboard_backend *b, const char *mime,
     size_t total = cur_len + sep_len + new_len;
 
     if (max_mem && total > max_mem) {
-        fprintf(stderr, "cpadd: result (%zu bytes) would exceed the %zu-byte "
+        fprintf(stderr, "%s: result (%zu bytes) would exceed the %zu-byte "
                         "limit; raise with --maxmem (or --maxmem 0 to disable)\n",
-                total, max_mem);
+                prog, total, max_mem);
         free(cur);
         return -1;
     }

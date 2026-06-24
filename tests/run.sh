@@ -130,19 +130,99 @@ head -c $((11 * 1024 * 1024)) /dev/zero | cpclip --backend null --maxmem 0
 check "--maxmem 0 disables the cap" "0" "$?"
 check "invalid --maxmem is a usage error" "2" \
       "$(echo x | cpclip --backend null --maxmem nope >/dev/null 2>&1; echo $?)"
-check "cppaste rejects --maxmem" "cppaste: -m/--maxmem applies only to cpclip/cpadd" \
+check "cppaste rejects --maxmem" "cppaste: -m/--maxmem applies only to cpclip/cpadd/cuclip/cuadd" \
       "$(cppaste --maxmem 5M --backend null 2>&1)"
 
 # --- CLI surface: dispatch, flags, exit codes ----------------------------
 echo "== CLI surface =="
-check "unknown invocation name" "invoke as cpclip, cpadd, cppaste, or cpclear" \
+check "unknown invocation name" "invoke as cpclip, cpadd, cppaste, cpclear, cuclip, or cuadd" \
       "$(ln -sf cpclip bogus; ./bogus 2>&1; rm -f bogus)"
-check "cppaste rejects --separator" "cppaste: --separator applies only to cpadd" \
+check "cppaste rejects --separator" "cppaste: --separator applies only to cpadd/cuadd" \
       "$(cppaste --separator x --backend null 2>&1)"
 check "cpclear rejects -t" "cpclear: -t/--type does not apply to cpclear" \
       "$(cpclear -t text/plain --backend null 2>&1)"
 check "--help exits 0" "0" "$(cpclip --help >/dev/null; echo $?)"
 check "usage error exits 2" "2" "$(cpclip -n --backend null >/dev/null 2>&1; echo $?)"
+
+# --- cuclip / cuadd (cut: copy without TTY mirror) -----------------------
+echo "== cuclip / cuadd: basic round-trip =="
+cpclear --backend null
+printf 'cutval' | cuclip --backend null
+check "cuclip copies to clipboard" "cutval" "$(cppaste -n --backend null)"
+
+printf 'a\0b' | cuclip --backend null
+check "cuclip NUL binary-safe" "610062" "$(cppaste -n --backend null | xxd -p)"
+
+printf '' | cuclip --backend null
+check "cuclip empty input round-trips" "" "$(cppaste -n --backend null)"
+
+printf 'IMGDATA' | cuclip -t image/png --backend null
+check "cuclip -t type flag" "IMGDATA" "$(cppaste -t image/png -n --backend null)"
+
+cpclear --backend null
+head -c $((11 * 1024 * 1024)) /dev/zero | cuclip --backend null 2>/dev/null
+check "cuclip default 10 MiB cap rejects 11 MiB" "1" "$?"
+head -c $((11 * 1024 * 1024)) /dev/zero | cuclip --backend null --maxmem 20M
+check "cuclip --maxmem 20M accepts 11 MiB" "0" "$?"
+
+echo "== cuclip / cuadd: stdout silence =="
+check "cuclip silent (non-TTY stdout)" "" "$(printf 'hello' | cuclip --backend null)"
+check "cuadd silent (non-TTY stdout)"  "" "$(printf 'world' | cuadd  --backend null)"
+
+echo "== cuclip / cuadd: add composition =="
+cpclear --backend null
+printf 'one'   | cuclip --backend null
+printf 'two'   | cuadd  --backend null
+printf 'three' | cuadd  --backend null
+check "cuadd composition" "$(printf 'one\ntwo\nthree')" "$(cppaste -n --backend null)"
+
+cpclear --backend null
+printf 'A' | cuclip --backend null
+printf 'B' | cuadd --separator '|' --backend null
+check "cuadd --separator" "A|B" "$(cppaste -n --backend null)"
+
+cpclear --backend null
+printf 'solo' | cuadd --backend null
+check "cuadd on empty clipboard == copy" "solo" "$(cppaste -n --backend null)"
+
+echo "== cuclip / cuadd: non-text refusal =="
+cpclear --backend null
+printf 'PNGDATA' | cuclip -t image/png --backend null
+check "cuadd refuses non-text" \
+      "cuadd: current selection is not text; refusing to overwrite it" \
+      "$(printf x | cuadd --backend null 2>&1 >/dev/null)"
+check "cuadd did not clobber" "PNGDATA" "$(cppaste -t image/png -n --backend null)"
+
+echo "== cuclip / cuadd: TTY mirror suppression =="
+if command -v python3 >/dev/null 2>&1; then
+    _pty_run() {  # $1 = binary name; prints whatever it writes to a PTY stdout
+        python3 - "$1" <<'PYEOF'
+import os, pty, subprocess, select, sys
+bin_name = sys.argv[1]
+master, slave = pty.openpty()
+proc = subprocess.Popen(
+    [bin_name, '--backend', 'null'],
+    stdin=subprocess.PIPE, stdout=slave, stderr=subprocess.DEVNULL,
+    close_fds=True)
+os.close(slave)
+proc.stdin.write(b'ttytest\n')
+proc.stdin.close()
+proc.wait()
+data = b''
+while select.select([master], [], [], 0.2)[0]:
+    try: data += os.read(master, 4096)
+    except OSError: break
+os.close(master)
+# Strip carriage returns injected by the terminal line discipline
+print(data.decode('utf-8', errors='replace').replace('\r', '').rstrip('\n'), end='')
+PYEOF
+    }
+    check "cuclip no TTY echo"   ""         "$(_pty_run ./cuclip)"
+    check "cuadd  no TTY echo"   ""         "$(_pty_run ./cuadd)"
+    check "cpclip echoes in TTY" "ttytest"  "$(_pty_run ./cpclip)"  # control
+else
+    echo "  SKIP: TTY mirror tests (python3 not available)"
+fi
 
 # --- large input + X11 INCR send -----------------------------------------
 if printf '%s\n' "${backends[@]}" | grep -qx x11; then

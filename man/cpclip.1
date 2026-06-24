@@ -1,6 +1,6 @@
 .TH CPCLIP 1 "2026" "cpclip" "User Commands"
 .SH NAME
-cpclip, cpadd, cppaste, cpclear \- command-line clipboard for X11 and Wayland
+cpclip, cpadd, cppaste, cpclear, cuclip, cuadd \- command-line clipboard for X11 and Wayland
 .SH SYNOPSIS
 .B cpclip
 .RI [ TEXT ]
@@ -30,8 +30,26 @@ cpclip, cpadd, cppaste, cpclear \- command-line clipboard for X11 and Wayland
 .B cpclear
 .RB [ \-\-backend
 .IR NAME ]
+.br
+.B cuclip
+.RI [ TEXT ]
+.RB [ \-t
+.IR MIME ]
+.RB [ \-f ]
+.RB [ \-\-backend
+.IR NAME ]
+.br
+.B cuadd
+.RI [ TEXT ]
+.RB [ \-t
+.IR MIME ]
+.RB [ \-\-separator
+.IR STR ]
+.RB [ \-f ]
+.RB [ \-\-backend
+.IR NAME ]
 .SH DESCRIPTION
-One binary with four faces, selected by the name it is invoked as. It captures
+One binary with six faces, selected by the name it is invoked as. It captures
 process output to the system clipboard and serves the clipboard back to process
 input, on both X11 and Wayland, behind one identical command interface.
 .TP
@@ -39,6 +57,7 @@ input, on both X11 and Wayland, behind one identical command interface.
 Read standard input (or the
 .I TEXT
 argument) and replace the clipboard with it.
+Mirrors standard input to standard output when standard output is a terminal.
 .TP
 .B cpadd
 Append standard input (or
@@ -47,12 +66,24 @@ to the clipboard, joined by a separator (default newline). On an empty
 clipboard this is identical to
 .BR cpclip .
 It refuses to overwrite a non-text selection.
+Mirrors standard input to standard output when standard output is a terminal.
 .TP
 .B cppaste
 Write the clipboard to standard output.
 .TP
 .B cpclear
 Relinquish ownership so the clipboard becomes empty.
+.TP
+.B cuclip
+Like
+.B cpclip
+but never echoes to standard output.
+Useful in scripts or pipelines where terminal pass-through is unwanted.
+.TP
+.B cuadd
+Like
+.B cpadd
+but never echoes to standard output.
 .PP
 Because X11 and Wayland have no system-owned clipboard buffer, the copying
 process itself is the storage:
@@ -82,12 +113,12 @@ only when the data does not already end with one. Use
 for byte-exact binary output.
 .TP
 .BR \-f ", " \-\-foreground
-.RB ( cpclip ", " cpadd
+.RB ( cpclip ", " cpadd ", " cuclip ", " cuadd
 only) Stay in the foreground and serve the selection until another client takes
 it, instead of forking into the background.
 .TP
 .BR \-m ", " \-\-maxmem " " \fISIZE\fP
-.RB ( cpclip ", " cpadd
+.RB ( cpclip ", " cpadd ", " cuclip ", " cuadd
 only) Cap the input size.
 .I SIZE
 accepts a binary K/M/G suffix (e.g.\&
@@ -119,6 +150,10 @@ terminal, so
 shows the output and copies it, while
 .RB ` "cmd | cpclip | other" `
 copies silently without disturbing the pipeline.
+.B cuclip
+and
+.B cuadd
+never mirror, regardless of whether standard output is a terminal.
 .SH "EXIT STATUS"
 .TP
 .B 0

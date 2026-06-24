@@ -5,14 +5,18 @@ command interface. It captures process output to the clipboard and serves the
 clipboard back to process input, and adds a composed `add` (append) operation
 that neither display server provides natively.
 
-One binary with four faces, dispatched on `argv[0]` (the BusyBox pattern):
+One binary with six faces, dispatched on `argv[0]` (the BusyBox pattern):
 
-| Command   | Action                                              |
-|-----------|-----------------------------------------------------|
-| `cpclip`  | stdin (or `TEXT`) → clipboard (replace)             |
-| `cpadd`   | stdin (or `TEXT`) → clipboard (append)              |
-| `cppaste` | clipboard → stdout                                  |
-| `cpclear` | empty the clipboard                                 |
+| Command   | Action                                              | TTY echo |
+|-----------|-----------------------------------------------------|----------|
+| `cpclip`  | stdin (or `TEXT`) → clipboard (replace)             | yes      |
+| `cpadd`   | stdin (or `TEXT`) → clipboard (append)              | yes      |
+| `cppaste` | clipboard → stdout                                  | —        |
+| `cpclear` | empty the clipboard                                 | —        |
+| `cuclip`  | stdin (or `TEXT`) → clipboard (replace)             | never    |
+| `cuadd`   | stdin (or `TEXT`) → clipboard (append)              | never    |
+
+"TTY echo" means stdin is mirrored to stdout when stdout is a terminal.
 
 ## Install
 
@@ -27,7 +31,7 @@ curl -fsSL https://raw.githubusercontent.com/jvidal86/cpclip/main/install.sh | s
 
 It installs into **`/usr/local`** (using `sudo` only for that step):
 
-- `/usr/local/bin/cpclip` plus the `cpadd`, `cppaste`, `cpclear` symlinks
+- `/usr/local/bin/cpclip` plus the `cpadd`, `cppaste`, `cpclear`, `cuclip`, `cuadd` symlinks
 - `/usr/local/share/man/man1/cp*.1`
 
 `/usr/local/bin` is on the default `PATH`, so `cpclip` works immediately.
@@ -56,17 +60,90 @@ make test          # runs the test matrix on whatever backends are available
 sudo make install  # installs to /usr/local (override with PREFIX= and DESTDIR=)
 ```
 
-## Examples
+## Usage
+
+### Copy and paste
 
 ```sh
-make 2>&1 | cpclip          # copy a command's output (and see it, if interactive)
+echo "hello" | cpclip       # copy text to the clipboard
+cppaste                      # paste it back
+cpclear                      # empty the clipboard
+```
 
-git rev-parse HEAD | cpclip # accumulate several outputs into one entry
-date              | cpadd
-uname -a          | cpadd
-cppaste
+### TTY pass-through
 
-cppaste -n > image.png      # byte-exact binary output (no trailing newline)
+`cpclip` and `cpadd` mirror stdin to stdout **only when stdout is a terminal**,
+so you see the output and copy it at the same time:
+
+```sh
+make 2>&1 | cpclip           # prints the build output and copies it
+```
+
+When stdout is not a terminal (pipe, redirection, script), the mirror is
+suppressed automatically — nothing extra reaches the next stage:
+
+```sh
+make 2>&1 | cpclip | wc -l  # copies silently; wc counts what actually went through
+```
+
+### Redirecting stdout and stderr
+
+Because the mirror only fires when stdout is a TTY, redirecting stdout
+is enough to silence it:
+
+```sh
+make 2>&1 | cpclip > /dev/null      # copy silently, discard stdout
+make 2>&1 | cpclip > build.log      # copy and also save to a file
+make 2>&1 | cpclip > build.log 2>&1 # same, stderr to the log too
+```
+
+Redirect stderr to suppress backend error messages (e.g. when the clipboard
+is unavailable and you don't want noise):
+
+```sh
+echo hi | cpclip 2>/dev/null
+```
+
+### Silent copy with cuclip / cuadd
+
+`cuclip` and `cuadd` never echo, regardless of whether stdout is a terminal.
+Use them when the intent is "copy only" and pass-through would be surprising
+— in shell functions, scripts, or keybindings where fd state is unpredictable:
+
+```sh
+echo hi | cuclip             # always silent
+echo more | cuadd            # append, always silent
+```
+
+They accept the same flags as their `cp*` counterparts (`-t`, `-f`, `--maxmem`,
+`--separator`, `--backend`), and all shell redirections work the same way.
+
+### Append
+
+Build up a clipboard entry from several commands, then paste it all at once:
+
+```sh
+git rev-parse HEAD | cpclip  # first line — replaces the clipboard
+date              | cpadd    # appended with a newline separator
+uname -a          | cpadd    # appended again
+cppaste                       # paste all three lines
+```
+
+Custom separator:
+
+```sh
+printf 'foo' | cpclip
+printf 'bar' | cpadd --separator ' | '
+cppaste -n                   # → foo | bar
+```
+
+### Paste options
+
+```sh
+cppaste                      # appends a newline if the content lacks one
+cppaste -n                   # byte-exact: no trailing newline added
+cppaste -n > image.png       # save binary clipboard content to a file
+cppaste -t text/html         # request a specific MIME type
 ```
 
 ## Backends
@@ -83,12 +160,12 @@ else **X11** when `$DISPLAY` is set. Force one with `--backend x11|wayland|null`
 ## How it works
 
 X11 and Wayland have no system-owned clipboard buffer: the copying process *is*
-the storage. So `cpclip`/`cpadd` fork a background owner that serves the bytes on
+the storage. So the copy/append commands fork a background owner that serves the bytes on
 demand (the parent returns only once the child confirms ownership), while
-`cppaste` is a clean one-shot read. A running clipboard manager copies from the
-new owner and provides persistence after it exits.
+`cppaste` is a clean one-shot read. A running clipboard manager copies from
+the new owner and provides persistence after it exits.
 
-Because that owner holds the whole payload in memory, a single `cpclip`/`cpadd`
+Because that owner holds the whole payload in memory, a single copy/append
 is capped at **10 MiB** by default (this is a text tool). Raise or remove it with
 `--maxmem` — e.g. `--maxmem 200M`, or `--maxmem 0` to disable the cap.
 

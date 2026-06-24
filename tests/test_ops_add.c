@@ -66,7 +66,7 @@ static void reset(void)
 Test(clip_add, empty_clipboard_is_a_plain_copy)
 {
     reset();
-    cr_assert_eq(clip_add(&mock, NULL, "abc", 3, "\n", 0), 0);
+    cr_assert_eq(clip_add(&mock, NULL, "abc", 3, "\n", 0, "cpadd"), 0);
     cr_assert(set_called);
     cr_assert_eq(last_set_len, 3u);             /* no leading separator */
     cr_assert_eq(memcmp(last_set, "abc", 3), 0);
@@ -77,7 +77,7 @@ Test(clip_add, appends_with_separator)
     reset();
     memcpy(store, "one", 3);
     store_len = 3;
-    cr_assert_eq(clip_add(&mock, NULL, "two", 3, "\n", 0), 0);
+    cr_assert_eq(clip_add(&mock, NULL, "two", 3, "\n", 0, "cpadd"), 0);
     cr_assert_eq(last_set_len, 7u);
     cr_assert_eq(memcmp(last_set, "one\ntwo", 7), 0);
 }
@@ -87,7 +87,7 @@ Test(clip_add, binary_safe_with_embedded_nul)
     reset();
     memcpy(store, "a\0b", 3);
     store_len = 3;
-    cr_assert_eq(clip_add(&mock, NULL, "c\0d", 3, "", 0), 0);
+    cr_assert_eq(clip_add(&mock, NULL, "c\0d", 3, "", 0, "cpadd"), 0);
     cr_assert_eq(last_set_len, 6u);
     cr_assert_eq(memcmp(last_set, "a\0bc\0d", 6), 0);
 }
@@ -96,7 +96,7 @@ Test(clip_add, refuses_non_text_selection)
 {
     reset();
     get_status = CLIP_GET_NO_TEXT;
-    cr_assert_eq(clip_add(&mock, NULL, "x", 1, "\n", 0), -1);
+    cr_assert_eq(clip_add(&mock, NULL, "x", 1, "\n", 0, "cpadd"), -1);
     cr_assert_eq(set_called, 0);                /* must not clobber */
 }
 
@@ -104,7 +104,7 @@ Test(clip_add, propagates_get_error)
 {
     reset();
     get_status = CLIP_GET_ERROR;
-    cr_assert_eq(clip_add(&mock, NULL, "x", 1, "\n", 0), -1);
+    cr_assert_eq(clip_add(&mock, NULL, "x", 1, "\n", 0, "cpadd"), -1);
     cr_assert_eq(set_called, 0);
 }
 
@@ -113,6 +113,6 @@ Test(clip_add, enforces_max_mem_on_total)
     reset();
     memcpy(store, "aaaaa", 5);
     store_len = 5;                              /* 5 + 1 sep + 5 = 11 > 8 */
-    cr_assert_eq(clip_add(&mock, NULL, "bbbbb", 5, "\n", 8), -1);
+    cr_assert_eq(clip_add(&mock, NULL, "bbbbb", 5, "\n", 8, "cpadd"), -1);
     cr_assert_eq(set_called, 0);
 }
