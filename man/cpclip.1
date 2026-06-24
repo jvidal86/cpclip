@@ -97,8 +97,27 @@ owner exits.
 .SH OPTIONS
 .TP
 .BI \-t " MIME" "\fR, \fP" \-\-type " MIME"
-Content type. On copy it is advertised (and served) alongside the default text
-set; on paste it is the preferred type to request.
+Content type to advertise on copy or request on paste.
+When
+.B \-t
+is omitted,
+.BR cpclip " and " cuclip
+sniff up to 8 KiB of the input to choose a MIME type automatically:
+a NUL byte triggers
+.BR application/octet-stream ;
+valid UTF-8 (including pure ASCII) triggers
+.BR text/plain;charset=utf-8 ;
+otherwise
+.B text/plain
+is used.
+.B cpadd
+and
+.B cuadd
+always use
+.B text/plain;charset=utf-8
+by default (append is a text operation; use
+.B \-t
+to override).
 .TP
 .BR \-\-separator " " \fISTR\fP
 .RB ( cpadd
@@ -108,9 +127,12 @@ Defaults to a newline.
 .BR \-n ", " \-\-no\-newline
 .RB ( cppaste
 only) Do not append a trailing newline. By default a single newline is appended
-only when the data does not already end with one. Use
-.B \-n
-for byte-exact binary output.
+only when the data does not already end with one.
+When
+.B cppaste
+retrieves binary content via the
+.B application/octet-stream
+fallback the trailing newline is always suppressed regardless of this flag.
 .TP
 .BR \-f ", " \-\-foreground
 .RB ( cpclip ", " cpadd ", " cuclip ", " cuadd
@@ -203,9 +225,33 @@ Paste byte-exact binary data:
 cppaste -n > image.png
 .fi
 .RE
+.PP
+Copy a binary file and paste it back:
+.PP
+.RS
+.nf
+cpclip < image.png          # sniffs NUL bytes; stores as application/octet-stream
+cppaste -n > image_copy.png # binary fallback; no trailing newline added
+.fi
+.RE
 .SH NOTES
 All clipboard payloads are handled as raw bytes, so NUL bytes and arbitrary
-binary survive a round trip. Primary and secondary selections are not supported.
+binary survive a round trip.
+.PP
+When
+.B \-t
+is not given,
+.BR cpclip " and " cuclip
+automatically detect the content type by inspecting up to 8 KiB of the input.
+This means that text piped without
+.B \-t
+is advertised as
+.B text/plain;charset=utf-8
+to pasting applications, which may improve interoperability with rich editors.
+If the detected type is wrong, override it with
+.BR \-t .
+.PP
+Primary and secondary selections are not supported.
 With a running clipboard manager,
 .B cpclear
 may be immediately undone by the manager restoring its history.
