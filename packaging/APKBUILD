@@ -1,0 +1,24 @@
+# Maintainer: J Vidal <j.vidal.rodriguez@gmail.com>
+# Alpine Linux package for cpclip. Runtime deps are auto-detected by abuild
+# from the linked shared libraries, so no explicit depends= is needed.
+# Run `abuild checksum` to fill in sha512sums before building.
+pkgname=cpclip
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="Minimal X11 and Wayland clipboard CLI"
+url="https://github.com/jvidal86/cpclip"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="libx11-dev libxfixes-dev wayland-dev wayland-protocols pkgconf"
+source="$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$pkgver"
+
+build() {
+	make
+}
+
+package() {
+	make install DESTDIR="$pkgdir" PREFIX=/usr
+}
+
+sha512sums="SKIP"

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* backend_null.c — a fake backend for testing the wiring with zero
  * display-server noise (DESIGN.md teaching beat, Phase 0).
  *

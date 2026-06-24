@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* io_util.h — binary-safe I/O helpers shared by every backend and the CLI.
  *
  * See DESIGN.md §6 (binary-safe everywhere; grow-buffer stdin; TTY pass-through).

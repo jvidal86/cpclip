@@ -5,7 +5,7 @@
 
 CC       ?= cc
 CFLAGS   ?= -O2 -g -std=c11 -Wall -Wextra
-CPPFLAGS += -D_GNU_SOURCE
+CPPFLAGS ?=
 LDFLAGS  ?=
 
 PREFIX   ?= /usr/local
@@ -34,8 +34,13 @@ OBJS = $(addprefix $(BUILDDIR)/, \
        backend_null.o backend_x11.o backend_wayland.o \
        ext-data-control-v1-protocol.o)
 
-CFLAGS += -I$(BUILDDIR) $(shell pkg-config --cflags x11 xfixes wayland-client)
-LIBS    = $(shell pkg-config --libs x11 xfixes wayland-client)
+# Mandatory build flags cpclip cannot compile/link without. Kept OUT of
+# CFLAGS/CPPFLAGS so a caller overriding those (distro packaging injects
+# hardening flags, CI adds -Werror) never drops the include paths or pkg-config
+# flags via a command-line override of CFLAGS.
+cpclip_flags := -D_GNU_SOURCE -I$(BUILDDIR) \
+                $(shell pkg-config --cflags x11 xfixes wayland-client)
+LIBS         := $(shell pkg-config --libs x11 xfixes wayland-client)
 
 HEADERS = $(addprefix $(SRCDIR)/, backend.h io_util.h ops_add.h proc_util.h)
 
@@ -52,12 +57,12 @@ $(BUILDDIR):
 
 # Hand-written sources (found in src/ via VPATH) -> build/*.o
 $(BUILDDIR)/%.o: %.c $(HEADERS) | $(BUILDDIR)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(cpclip_flags) -c -o $@ $<
 
 # The generated protocol source has a full build/ path, so build it explicitly
 # rather than through the VPATH pattern rule.
 $(BUILDDIR)/ext-data-control-v1-protocol.o: $(EXTDC_SRC) | $(BUILDDIR)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $(EXTDC_SRC)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(cpclip_flags) -c -o $@ $(EXTDC_SRC)
 
 # The Wayland backend needs the generated header (found via -I$(BUILDDIR)).
 $(BUILDDIR)/backend_wayland.o: $(EXTDC_HDR)

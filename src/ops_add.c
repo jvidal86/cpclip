@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* ops_add.c — see ops_add.h and DESIGN.md §5.3. */
 #include "ops_add.h"
 

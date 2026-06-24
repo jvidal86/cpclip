@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* backend_wayland.c — Wayland clipboard backend via ext-data-control.
  *
  * We use ext_data_control_manager_v1 rather than the core wl_data_device.

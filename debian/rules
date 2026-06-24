@@ -1,0 +1,12 @@
+#!/usr/bin/make -f
+# Build cpclip as a Debian package. The upstream Makefile does the real work;
+# we only force PREFIX=/usr (it defaults to /usr/local) so files land in the
+# distro-correct locations.
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+	dh $@
+
+override_dh_auto_install:
+	dh_auto_install -- PREFIX=/usr

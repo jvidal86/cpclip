@@ -1,0 +1,27 @@
+Source: cpclip
+Section: utils
+Priority: optional
+Maintainer: J Vidal <j.vidal.rodriguez@gmail.com>
+Build-Depends: debhelper-compat (= 13),
+               pkg-config,
+               libx11-dev,
+               libxfixes-dev,
+               libwayland-dev,
+               wayland-protocols
+Standards-Version: 4.7.0
+Homepage: https://github.com/jvidal86/cpclip
+Rules-Requires-Root: no
+Vcs-Git: https://github.com/jvidal86/cpclip.git
+Vcs-Browser: https://github.com/jvidal86/cpclip
+
+Package: cpclip
+Architecture: linux-any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: minimal X11 and Wayland clipboard CLI
+ cpclip is a small command-line clipboard tool for Linux supporting both
+ X11 (via Xfixes) and Wayland (via the ext-data-control protocol). A single
+ binary provides cpclip, cpadd, cppaste and cpclear via argv[0] dispatch,
+ capturing process output to the clipboard and serving it back to stdin.
+ .
+ The Wayland backend requires a compositor that implements
+ ext_data_control_manager_v1 (e.g. sway, labwc, KWin, Weston 14+).

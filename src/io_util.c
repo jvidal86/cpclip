@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* io_util.c — see io_util.h. */
 #include "io_util.h"
 

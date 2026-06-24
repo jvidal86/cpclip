@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* proc_util.c — see proc_util.h. */
 #include "proc_util.h"
 

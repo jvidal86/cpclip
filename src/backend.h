@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* backend.h — the clipboard backend interface.
  *
  * One abstraction, several implementations. This struct of function pointers

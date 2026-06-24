@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* main.c — argv[0] dispatch, per-command flag parsing, backend detection.
  *
  * One binary with four faces, selected by the name it is invoked as (the

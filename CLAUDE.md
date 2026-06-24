@@ -15,6 +15,8 @@ Always build with `-Wall -Wextra` (already in `CFLAGS`) and fix all warnings bef
 
 Dependencies: `libx11-dev`, `libxfixes-dev`, `libwayland-dev`, `wayland-protocols`, plus `wayland-scanner` and a C11 compiler.
 
+License: GPL-2.0-or-later (`LICENSE`); every `src/*.c|h` carries an `SPDX-License-Identifier` header. Packaging lives in `debian/`, `nfpm.yaml`, and `packaging/`; CI/release workflows in `.github/workflows/`.
+
 ## Layout
 
 ```

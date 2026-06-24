@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* backend_x11.c — X11 clipboard backend (Xlib + XFixes).
  *
  * The copying process IS the storage: on `set` we take ownership of the

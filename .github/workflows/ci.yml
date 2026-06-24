@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+  BUILD_DEPS: >-
+    build-essential pkg-config libx11-dev libxfixes-dev
+    libwayland-dev wayland-protocols
+
+jobs:
+  build:
+    name: build (${{ matrix.os }} / ${{ matrix.cc }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $BUILD_DEPS clang xxd
+      - name: Build (warnings as errors)
+        run: |
+          make clean
+          make CC=${{ matrix.cc }} \
+               CFLAGS="-std=c11 -O2 -Wall -Wextra -Werror"
+      - name: Null-backend tests
+        run: make test          # no DISPLAY / WAYLAND_DISPLAY -> null backend only
+
+  static-analysis:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            $BUILD_DEPS cppcheck clang-tidy
+      - name: Generate Wayland protocol glue
+        run: make            # produces build/ext-data-control-v1-client-protocol.h
+      - name: cppcheck
+        run: |
+          cppcheck --std=c11 --enable=warning,performance,portability \
+            --error-exitcode=2 --inline-suppr \
+            --suppress=missingIncludeSystem \
+            -I src -I build src/
+      - name: clang-tidy (advisory)
+        continue-on-error: true
+        run: |
+          clang-tidy src/*.c -- -std=c11 -I src -I build -D_GNU_SOURCE \
+            $(pkg-config --cflags x11 xfixes wayland-client)
+
+  test-x11:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            $BUILD_DEPS xvfb x11-utils xxd
+      - name: Build
+        run: make
+      - name: X11-backend tests
+        run: xvfb-run -a make test     # sets $DISPLAY -> null + x11
+
+  test-wayland:
+    runs-on: ubuntu-24.04
+    continue-on-error: true            # best-effort: never blocks merges
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps + headless compositor
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            $BUILD_DEPS weston xxd
+      - name: Build
+        run: make
+      - name: Wayland-backend tests (Weston headless)
+        run: |
+          export XDG_RUNTIME_DIR="$(mktemp -d)"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          export WAYLAND_DISPLAY=wayland-ci
+          weston --backend=headless-shell \
+                 --socket="$WAYLAND_DISPLAY" --idle-time=0 &
+          weston_pid=$!
+          trap 'kill $weston_pid 2>/dev/null || true' EXIT
+          # wait for the compositor socket to appear
+          for _ in $(seq 1 50); do
+            [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ] && break
+            sleep 0.2
+          done
+          # warn (don't fail) if this Weston is too old for ext-data-control
+          if command -v weston-info >/dev/null 2>&1; then
+            weston-info | grep -q ext_data_control_manager_v1 \
+              || echo "::warning::compositor lacks ext_data_control_manager_v1; Wayland tests will skip"
+          fi
+          make test

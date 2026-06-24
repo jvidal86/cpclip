@@ -1,0 +1,62 @@
+# nfpm config — builds .deb / .rpm / .apk from one definition.
+#
+#   make install DESTDIR=staging PREFIX=/usr
+#   VERSION=0.1.0 nfpm package --packager deb --target dist/
+#   VERSION=0.1.0 nfpm package --packager rpm --target dist/
+#   VERSION=0.1.0 nfpm package --packager apk --target dist/
+#
+# The native debian/ package (dpkg-buildpackage) is the lintian-clean Debian
+# artifact; this nfpm path exists for quick multi-distro release downloads.
+name: cpclip
+arch: amd64
+platform: linux
+version: ${VERSION}
+section: utils
+priority: optional
+maintainer: J Vidal <j.vidal.rodriguez@gmail.com>
+description: |
+  Minimal X11 and Wayland clipboard CLI (cpclip/cpadd/cppaste/cpclear).
+  A single binary dispatched on argv[0] captures process output to the
+  clipboard and serves it back to stdin, on both X11 and Wayland. The Wayland
+  backend needs a compositor implementing ext_data_control_manager_v1.
+homepage: https://github.com/jvidal86/cpclip
+license: GPL-2.0-or-later
+
+contents:
+  - src: staging/usr/bin/cpclip
+    dst: /usr/bin/cpclip
+  - src: cpclip
+    dst: /usr/bin/cpadd
+    type: symlink
+  - src: cpclip
+    dst: /usr/bin/cppaste
+    type: symlink
+  - src: cpclip
+    dst: /usr/bin/cpclear
+    type: symlink
+  - src: staging/usr/share/man/man1/cpclip.1
+    dst: /usr/share/man/man1/cpclip.1
+  - src: staging/usr/share/man/man1/cpadd.1
+    dst: /usr/share/man/man1/cpadd.1
+  - src: staging/usr/share/man/man1/cppaste.1
+    dst: /usr/share/man/man1/cppaste.1
+  - src: staging/usr/share/man/man1/cpclear.1
+    dst: /usr/share/man/man1/cpclear.1
+
+# Per-format runtime dependency names (the shared libraries cpclip links).
+overrides:
+  deb:
+    depends:
+      - libx11-6
+      - libxfixes3
+      - libwayland-client0
+  rpm:
+    depends:
+      - libX11
+      - libXfixes
+      - libwayland-client
+  apk:
+    depends:
+      - libx11
+      - libxfixes
+      - wayland-libs-client

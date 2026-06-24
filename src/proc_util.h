@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* proc_util.h — process plumbing shared by the forking clipboard owners.
  *
  * Both the X11 and Wayland backends become a persistent background owner the

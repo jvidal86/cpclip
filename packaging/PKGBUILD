@@ -1,0 +1,23 @@
+# Maintainer: J Vidal <j.vidal.rodriguez@gmail.com>
+# Arch Linux / AUR package for cpclip.
+pkgname=cpclip
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Minimal X11 and Wayland clipboard CLI (cpadd/cppaste/cpclear)"
+arch=('x86_64')
+url="https://github.com/jvidal86/cpclip"
+license=('GPL-2.0-or-later')
+depends=('libx11' 'libxfixes' 'wayland')
+makedepends=('wayland-protocols' 'pkgconf')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
+sha256sums=('SKIP')   # replace with `updpkgsums` output for a real release
+
+build() {
+	cd "$pkgname-$pkgver"
+	make
+}
+
+package() {
+	cd "$pkgname-$pkgver"
+	make install DESTDIR="$pkgdir" PREFIX=/usr
+}

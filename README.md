@@ -20,6 +20,9 @@ make test       # runs the test matrix on whatever backends are available
 sudo make install
 ```
 
+Prebuilt `.deb` / `.rpm` / `.apk` packages are attached to each
+[GitHub Release](https://github.com/jvidal86/cpclip/releases).
+
 ## Examples
 
 ```sh
@@ -63,3 +66,7 @@ See [`doc/DESIGN.md`](doc/DESIGN.md) for the architecture and
 ## Not supported
 
 Primary/secondary selections, clipboard history/watch mode, macOS/Windows.
+
+## License
+
+GPL-2.0-or-later. See [`LICENSE`](LICENSE).

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* ops_add.h — the composed `add` (append) operation.
  *
  * `add` is not a primitive: neither X11 nor Wayland can append. It is
