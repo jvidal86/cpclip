@@ -1,8 +1,8 @@
 # cpclip
 
-[![CI](https://img.shields.io/github/actions/workflow/status/jvidal86/cpclip/ci.yml)](https://github.com/jvidal86/cpclip/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-70%20passing-brightgreen)](https://github.com/jvidal86/cpclip/actions)
-[![License](https://img.shields.io/github/license/jvidal86/cpclip)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/clicraft/cpclip/ci.yml)](https://github.com/clicraft/cpclip/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-70%20passing-brightgreen)](https://github.com/clicraft/cpclip/actions)
+[![License](https://img.shields.io/github/license/clicraft/cpclip)](LICENSE)
 [![Built with Claude Code](https://img.shields.io/badge/built%20with-Claude%20Code-d97757?logo=anthropic&logoColor=white)](https://claude.ai/code)
 
 A single CLI clipboard tool for both **X11 and Wayland**, with one identical
@@ -31,7 +31,7 @@ Downloads the latest release, verifies its SHA-256, and installs system-wide
 (`wget -qO- … | sh` works too):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jvidal86/cpclip/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/clicraft/cpclip/main/install.sh | sh
 ```
 
 It installs into **`/usr/local`** (using `sudo` only for that step):
@@ -45,7 +45,7 @@ It installs into **`/usr/local`** (using `sudo` only for that step):
 piped shell (note the placement, so the variable reaches the script, not `curl`):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jvidal86/cpclip/main/install.sh | PREFIX=$HOME/.local sh
+curl -fsSL https://raw.githubusercontent.com/clicraft/cpclip/main/install.sh | PREFIX=$HOME/.local sh
 ```
 
 Pin a specific version with `CPCLIP_VERSION=v0.1.1`.
@@ -53,7 +53,7 @@ Pin a specific version with `CPCLIP_VERSION=v0.1.1`.
 ### Native package
 
 Download a `.deb` / `.rpm` / `.apk` from a
-[Release](https://github.com/jvidal86/cpclip/releases) and install it with your
+[Release](https://github.com/clicraft/cpclip/releases) and install it with your
 package manager — it resolves the `libx11` / `libxfixes` / `libwayland-client`
 runtime dependencies for you.
 

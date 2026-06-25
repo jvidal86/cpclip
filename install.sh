@@ -1,8 +1,8 @@
 #!/bin/sh
 # cpclip installer (POSIX sh — works piped to sh, bash, dash, ...).
 #
-#   curl -fsSL https://raw.githubusercontent.com/jvidal86/cpclip/main/install.sh | sh
-#   wget -qO-  https://raw.githubusercontent.com/jvidal86/cpclip/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/clicraft/cpclip/main/install.sh | sh
+#   wget -qO-  https://raw.githubusercontent.com/clicraft/cpclip/main/install.sh | sh
 #
 # It downloads the portable binary tarball from the latest GitHub Release,
 # verifies its SHA-256, and installs cpclip + the cpadd/cppaste/cpclear symlinks
@@ -13,7 +13,7 @@
 #   CPCLIP_VERSION=v0.1.0    pin a version (default: the latest release)
 set -eu
 
-REPO="jvidal86/cpclip"
+REPO="clicraft/cpclip"
 PREFIX="${PREFIX:-/usr/local}"
 VERSION="${CPCLIP_VERSION:-latest}"
 

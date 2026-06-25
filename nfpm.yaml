@@ -19,7 +19,7 @@ description: |
   A single binary dispatched on argv[0] captures process output to the
   clipboard and serves it back to stdin, on both X11 and Wayland. The Wayland
   backend needs a compositor implementing ext_data_control_manager_v1.
-homepage: https://github.com/jvidal86/cpclip
+homepage: https://github.com/clicraft/cpclip
 license: GPL-2.0-or-later
 
 contents:
