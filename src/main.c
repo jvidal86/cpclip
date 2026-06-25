@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /* main.c — argv[0] dispatch, per-command flag parsing, backend detection.
  *
- * One binary with four faces, selected by the name it is invoked as (the
+ * One binary with seven faces, selected by the name it is invoked as (the
  * BusyBox / gzip-gunzip-zcat pattern). See DESIGN.md §4.
  */
 #include <getopt.h>
@@ -33,7 +33,10 @@ int clip_opt_foreground = 0;
  * guards against an accidental huge input pinning RAM in the background owner. */
 #define CLIP_DEFAULT_MAXMEM ((size_t)10 * 1024 * 1024)
 
-typedef enum { VERB_COPY, VERB_ADD, VERB_PASTE, VERB_CLEAR, VERB_CUT, VERB_CUTADD } verb_t;
+typedef enum {
+    VERB_COPY, VERB_ADD, VERB_PASTE, VERB_CLEAR,
+    VERB_CUT, VERB_CUTADD, VERB_SIZE
+} verb_t;
 
 typedef enum { BK_NONE, BK_NULL, BK_X11, BK_WAYLAND } backend_kind;
 
@@ -47,6 +50,7 @@ typedef struct {
     const char *backend;    /* --backend; NULL => auto */
     const char *text;       /* positional TEXT, or NULL => read stdin */
     size_t max_mem;         /* -m/--maxmem byte cap (copy/add); 0 => unlimited */
+    size_t size_divisor;    /* -K/-M/-G/--Ki/--Mi/--Gi (size); 0 => bytes */
     int have_text;
     int foreground;         /* -f */
     int no_newline;         /* -n (paste) */
@@ -61,6 +65,7 @@ static const char *verb_name(verb_t v)
     case VERB_CLEAR:   return "cpclear";
     case VERB_CUT:     return "cuclip";
     case VERB_CUTADD:  return "cuadd";
+    case VERB_SIZE:    return "cpsize";
     }
     return "cpclip";
 }
@@ -136,6 +141,22 @@ static void usage(verb_t v, FILE *f)
             "    -h, --help\n"
             "    -V, --version\n");
         break;
+    case VERB_SIZE:
+        fprintf(f,
+            "Usage: cpsize [-K|-M|-G|--Ki|--Mi|--Gi] [-t MIME] [--backend NAME]\n"
+            "  Print the size of the current clipboard content.\n"
+            "  Defaults to bytes; unit flags scale the output (integer truncation).\n"
+            "    -K              kilobytes  (/ 1 000)\n"
+            "    -M              megabytes  (/ 1 000 000)\n"
+            "    -G              gigabytes  (/ 1 000 000 000)\n"
+            "        --Ki        kibibytes  (/ 1 024)\n"
+            "        --Mi        mebibytes  (/ 1 048 576)\n"
+            "        --Gi        gibibytes  (/ 1 073 741 824)\n"
+            "    -t, --type MIME request a specific content type\n"
+            "        --backend NAME x11 | wayland | null | auto (default auto)\n"
+            "    -h, --help\n"
+            "    -V, --version\n");
+        break;
     }
 }
 
@@ -154,6 +175,7 @@ static int dispatch_verb(const char *prog, verb_t *out)
     if (!strcmp(prog, "cpclear")) { *out = VERB_CLEAR;   return 0; }
     if (!strcmp(prog, "cuclip"))  { *out = VERB_CUT;     return 0; }
     if (!strcmp(prog, "cuadd"))   { *out = VERB_CUTADD;  return 0; }
+    if (!strcmp(prog, "cpsize"))  { *out = VERB_SIZE;    return 0; }
     return -1;
 }
 
@@ -198,11 +220,11 @@ static const clipboard_backend *resolve_backend(const char *name)
     }
 }
 
-enum { OPT_BACKEND = 256, OPT_SEPARATOR };
+enum { OPT_BACKEND = 256, OPT_SEPARATOR, OPT_Ki, OPT_Mi, OPT_Gi };
 
 /* Which flags appeared on the command line (for per-command rejection). */
 typedef struct {
-    int type, foreground, no_newline, separator, maxmem;
+    int type, foreground, no_newline, separator, maxmem, size_unit;
 } seen_flags;
 
 /* Reject flags that do not apply to this command. Returns PARSE_OK or
@@ -226,6 +248,9 @@ static parse_result check_flag_applicability(verb_t verb, const seen_flags *seen
     if (seen->maxmem && verb != VERB_COPY && verb != VERB_ADD
                      && verb != VERB_CUT  && verb != VERB_CUTADD)
         return fprintf(stderr, "%s: -m/--maxmem applies only to cpclip/cpadd/cuclip/cuadd\n", me),
+               PARSE_USAGE_ERROR;
+    if (seen->size_unit && verb != VERB_SIZE)
+        return fprintf(stderr, "%s: -K/-M/-G/--Ki/--Mi/--Gi apply only to cpsize\n", me),
                PARSE_USAGE_ERROR;
     return PARSE_OK;
 }
@@ -264,6 +289,9 @@ static parse_result parse_args(verb_t verb, int argc, char **argv, options *opt)
         {"separator",  required_argument, 0, OPT_SEPARATOR},
         {"backend",    required_argument, 0, OPT_BACKEND},
         {"maxmem",     required_argument, 0, 'm'},
+        {"Ki",         no_argument,       0, OPT_Ki},
+        {"Mi",         no_argument,       0, OPT_Mi},
+        {"Gi",         no_argument,       0, OPT_Gi},
         {"help",       no_argument,       0, 'h'},
         {"version",    no_argument,       0, 'V'},
         {0, 0, 0, 0},
@@ -272,7 +300,7 @@ static parse_result parse_args(verb_t verb, int argc, char **argv, options *opt)
     seen_flags seen = {0};
     int c;
     optind = 1;
-    while ((c = getopt_long(argc, argv, "t:fnhVm:", longopts, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "t:fnhVm:KMG", longopts, NULL)) != -1) {
         switch (c) {
         case 't': opt->mime = optarg; seen.type = 1; break;
         case 'f': opt->foreground = 1; seen.foreground = 1; break;
@@ -287,6 +315,12 @@ static parse_result parse_args(verb_t verb, int argc, char **argv, options *opt)
             }
             seen.maxmem = 1;
             break;
+        case 'K': opt->size_divisor = 1000UL;          seen.size_unit = 1; break;
+        case 'M': opt->size_divisor = 1000000UL;        seen.size_unit = 1; break;
+        case 'G': opt->size_divisor = 1000000000UL;     seen.size_unit = 1; break;
+        case OPT_Ki: opt->size_divisor = 1024UL;        seen.size_unit = 1; break;
+        case OPT_Mi: opt->size_divisor = 1048576UL;     seen.size_unit = 1; break;
+        case OPT_Gi: opt->size_divisor = 1073741824UL;  seen.size_unit = 1; break;
         case 'V': printf("cpclip %s\n", CPCLIP_VERSION); return PARSE_VERSION;
         case 'h': usage(verb, stdout); return PARSE_HELP;
         default: usage(verb, stderr); return PARSE_USAGE_ERROR; /* getopt explained */
@@ -407,6 +441,26 @@ static int do_paste(const clipboard_backend *b, const options *opt)
     return rc;
 }
 
+static int do_size(const clipboard_backend *b, const options *opt)
+{
+    void *data = NULL;
+    size_t len = 0;
+    int status = b->get(opt->mime, &data, &len);
+    if (status == CLIP_GET_NO_TEXT && !opt->mime) {
+        /* Binary content stored via cpclip — report its size too. */
+        status = b->get("application/octet-stream", &data, &len);
+    }
+    if (status == CLIP_GET_ERROR)
+        return 1;                       /* infrastructure error, already reported */
+
+    /* CLIP_GET_OK (including empty clipboard len==0) or CLIP_GET_NO_TEXT
+     * (unrecognised type with explicit -t): report 0 in either case. */
+    size_t divisor = opt->size_divisor ? opt->size_divisor : 1;
+    printf("%zu\n", len / divisor);
+    free(data);
+    return 0;
+}
+
 static int do_clear(const clipboard_backend *b)
 {
     return b->clear() == 0 ? 0 : 1;
@@ -419,7 +473,8 @@ int main(int argc, char **argv)
 
     verb_t verb;
     if (dispatch_verb(prog_basename(argv[0]), &verb) != 0) {
-        fprintf(stderr, "invoke as cpclip, cpadd, cppaste, cpclear, cuclip, or cuadd\n");
+        fprintf(stderr,
+                "invoke as cpclip, cpadd, cppaste, cpclear, cuclip, cuadd, or cpsize\n");
         return EXIT_USAGE;
     }
 
@@ -444,6 +499,7 @@ int main(int argc, char **argv)
     case VERB_CLEAR:   return do_clear(b);
     case VERB_CUT:     return do_copy(b, &opt, verb);
     case VERB_CUTADD:  return do_add(b, &opt, verb);
+    case VERB_SIZE:    return do_size(b, &opt);
     }
     return 1;
 }

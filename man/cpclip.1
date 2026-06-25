@@ -1,6 +1,6 @@
 .TH CPCLIP 1 "2026" "cpclip" "User Commands"
 .SH NAME
-cpclip, cpadd, cppaste, cpclear, cuclip, cuadd \- command-line clipboard for X11 and Wayland
+cpclip, cpadd, cppaste, cpclear, cuclip, cuadd, cpsize \- command-line clipboard for X11 and Wayland
 .SH SYNOPSIS
 .B cpclip
 .RI [ TEXT ]
@@ -48,6 +48,13 @@ cpclip, cpadd, cppaste, cpclear, cuclip, cuadd \- command-line clipboard for X11
 .RB [ \-f ]
 .RB [ \-\-backend
 .IR NAME ]
+.br
+.B cpsize
+.RB [ \-K | \-M | \-G | \-\-Ki | \-\-Mi | \-\-Gi ]
+.RB [ \-t
+.IR MIME ]
+.RB [ \-\-backend
+.IR NAME ]
 .SH DESCRIPTION
 One binary with six faces, selected by the name it is invoked as. It captures
 process output to the system clipboard and serves the clipboard back to process
@@ -84,6 +91,13 @@ Useful in scripts or pipelines where terminal pass-through is unwanted.
 Like
 .B cpadd
 but never echoes to standard output.
+.TP
+.B cpsize
+Print the byte count of the current clipboard content to standard output.
+Accepts unit-scaling flags to display the result in kilobytes, megabytes, or
+gigabytes (SI or IEC).
+An empty clipboard prints
+.BR 0 .
 .PP
 Because X11 and Wayland have no system-owned clipboard buffer, the copying
 process itself is the storage:
@@ -95,6 +109,30 @@ parent does not exit until that child confirms ownership. A running clipboard
 manager (e.g. KDE's) typically takes over and provides persistence after the
 owner exits.
 .SH OPTIONS
+.TP
+.BR \-K
+.RB ( cpsize
+only) Print size in kilobytes (÷ 1\~000, truncated).
+.TP
+.BR \-M
+.RB ( cpsize
+only) Print size in megabytes (÷ 1\~000\~000, truncated).
+.TP
+.BR \-G
+.RB ( cpsize
+only) Print size in gigabytes (÷ 1\~000\~000\~000, truncated).
+.TP
+.BR \-\-Ki
+.RB ( cpsize
+only) Print size in kibibytes (÷ 1\~024, truncated).
+.TP
+.BR \-\-Mi
+.RB ( cpsize
+only) Print size in mebibytes (÷ 1\~048\~576, truncated).
+.TP
+.BR \-\-Gi
+.RB ( cpsize
+only) Print size in gibibytes (÷ 1\~073\~741\~824, truncated).
 .TP
 .BI \-t " MIME" "\fR, \fP" \-\-type " MIME"
 Content type to advertise on copy or request on paste.

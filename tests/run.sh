@@ -135,7 +135,7 @@ check "cppaste rejects --maxmem" "cppaste: -m/--maxmem applies only to cpclip/cp
 
 # --- CLI surface: dispatch, flags, exit codes ----------------------------
 echo "== CLI surface =="
-check "unknown invocation name" "invoke as cpclip, cpadd, cppaste, cpclear, cuclip, or cuadd" \
+check "unknown invocation name" "invoke as cpclip, cpadd, cppaste, cpclear, cuclip, cuadd, or cpsize" \
       "$(ln -sf cpclip bogus; ./bogus 2>&1; rm -f bogus)"
 check "cppaste rejects --separator" "cppaste: --separator applies only to cpadd/cuadd" \
       "$(cppaste --separator x --backend null 2>&1)"
