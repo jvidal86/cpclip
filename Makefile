@@ -99,7 +99,7 @@ test: all
 CRITERION_CFLAGS := $(shell pkg-config --cflags criterion 2>/dev/null)
 CRITERION_LIBS   := $(shell pkg-config --libs criterion 2>/dev/null || echo -lcriterion)
 UNIT_SRC  := $(wildcard tests/test_*.c)
-UNIT_DEPS := $(addprefix $(BUILDDIR)/, io_util.o ops_add.o parse_util.o)
+UNIT_DEPS := $(addprefix $(BUILDDIR)/, io_util.o ops_add.o parse_util.o mime_sniff.o)
 
 $(BUILDDIR)/test-unit: $(UNIT_SRC) $(UNIT_DEPS) | $(BUILDDIR)
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -I$(SRCDIR) $(CRITERION_CFLAGS) \

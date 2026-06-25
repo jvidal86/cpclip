@@ -224,6 +224,37 @@ else
     echo "  SKIP: TTY mirror tests (python3 not available)"
 fi
 
+# --- cpsize ---------------------------------------------------------------
+echo "== cpsize =="
+# Known-length text payload (12 bytes: "hello world\n")
+echo "hello world" | cpclip --backend null
+check "cpsize bytes"    "12" "$(cpsize --backend null)"
+check "cpsize -K"        "0" "$(cpsize -K --backend null)"
+check "cpsize --Ki"      "0" "$(cpsize --Ki --backend null)"
+
+# 2000-byte payload for unit scaling
+printf '%02000d' 0 | cpclip --backend null
+check "cpsize 2000 bytes" "2000" "$(cpsize --backend null)"
+check "cpsize 2000 -K"       "2" "$(cpsize -K --backend null)"
+check "cpsize 2000 --Ki"     "1" "$(cpsize --Ki --backend null)"
+check "cpsize 2000 -M"       "0" "$(cpsize -M --backend null)"
+check "cpsize 2000 --Mi"     "0" "$(cpsize --Mi --backend null)"
+check "cpsize 2000 -G"       "0" "$(cpsize -G --backend null)"
+check "cpsize 2000 --Gi"     "0" "$(cpsize --Gi --backend null)"
+
+# Empty clipboard
+cpclear --backend null
+check "cpsize on empty clipboard" "0" "$(cpsize --backend null)"
+
+# Binary content (stored as application/octet-stream via sniff)
+printf 'a\0b\0c' | cpclip --backend null
+check "cpsize counts binary bytes" "5" "$(cpsize --backend null)"
+
+# Flag rejection on wrong command
+check "cpsize -K rejected by cpclip" \
+      "cpclip: -K/-M/-G/--Ki/--Mi/--Gi apply only to cpsize" \
+      "$(cpclip -K --backend null 2>&1; true)"
+
 # --- large input + X11 INCR send -----------------------------------------
 if printf '%s\n' "${backends[@]}" | grep -qx x11; then
     echo "== X11 large input / INCR send =="
