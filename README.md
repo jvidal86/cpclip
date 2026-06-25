@@ -1,5 +1,10 @@
 # cpclip
 
+[![CI](https://img.shields.io/github/actions/workflow/status/jvidal86/cpclip/ci.yml)](https://github.com/jvidal86/cpclip/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-70%20passing-brightgreen)](https://github.com/jvidal86/cpclip/actions)
+[![License](https://img.shields.io/github/license/jvidal86/cpclip)](LICENSE)
+[![Built with Claude Code](https://img.shields.io/badge/built%20with-Claude%20Code-d97757?logo=anthropic&logoColor=white)](https://claude.ai/code)
+
 A single CLI clipboard tool for both **X11 and Wayland**, with one identical
 command interface. It captures process output to the clipboard and serves the
 clipboard back to process input, and adds a composed `add` (append) operation
